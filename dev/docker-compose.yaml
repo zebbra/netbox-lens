@@ -1,0 +1,50 @@
+services:
+  netbox:
+    image: ghcr.io/netbox-community/netbox:v4.4.7
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8080"
+    env_file: netbox.env
+    volumes:
+      - ../:/opt/netbox/netbox-lens:ro
+      - ./configuration.py:/etc/netbox/config/configuration.py:ro
+    command: >-
+      sh -c "/opt/netbox/venv/bin/pip install -q /opt/netbox/netbox-lens &&
+             exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
+
+  netbox-worker:
+    image: ghcr.io/netbox-community/netbox:v4.4.7
+    depends_on:
+      netbox:
+        condition: service_started
+    env_file: netbox.env
+    volumes:
+      - ../:/opt/netbox/netbox-lens:ro
+      - ./configuration.py:/etc/netbox/config/configuration.py:ro
+    command: >-
+      sh -c "/opt/netbox/venv/bin/pip install -q /opt/netbox/netbox-lens &&
+             exec /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker"
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: netbox
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "netbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  postgres-data:
