@@ -33,7 +33,7 @@ class NetdiscoBackend(LensBackend):
                 verify=self.config.get("verify_ssl", True),
             )
             resp.raise_for_status()
-            data = resp.json()
+            data = resp.json() if resp.content else {}
             result.sightings = data.get("sightings") or []
             result.ips = data.get("ips") or []
             result.macs = data.get("macs") or []
