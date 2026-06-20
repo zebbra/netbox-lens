@@ -9,6 +9,8 @@ services:
     ports:
       - "8000:8080"
     env_file: netbox.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/configuration.py:ro
@@ -22,6 +24,8 @@ services:
       netbox:
         condition: service_started
     env_file: netbox.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/configuration.py:ro
