@@ -9,6 +9,24 @@ from .backends import get_backends
 from .forms import NodeSearchForm
 
 
+class LensStatusView(View):
+    def get(self, request):
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+        backends = get_backends(config)
+        statuses = []
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(b.status): b for b in backends}
+            for future in as_completed(futures):
+                statuses.append(future.result())
+        return render(request, "netbox_lens/status.html", {
+            "statuses": statuses,
+            "config_error": None if backends else (
+                "No backends configured. Add at least one backend to "
+                "PLUGINS_CONFIG['netbox_lens']['backends']."
+            ),
+        })
+
+
 class LensSearchView(View):
     def get(self, request):
         form = NodeSearchForm(request.GET or None)

@@ -17,6 +17,19 @@ class SearchResult:
         return bool(self.sightings or self.ips or self.macs)
 
 
+@dataclass
+class BackendStatus:
+    backend: str
+    label: str
+    icon: str = "mdi mdi-database-search"
+    stats: dict = field(default_factory=dict)
+    error: str | None = None
+
+    @property
+    def ok(self):
+        return self.error is None
+
+
 class LensBackend(ABC):
     name: str
     label: str
@@ -28,3 +41,6 @@ class LensBackend(ABC):
     @abstractmethod
     def search(self, query: str, archived: bool = False) -> SearchResult:
         ...
+
+    def status(self) -> BackendStatus:
+        return BackendStatus(backend=self.name, label=self.label, icon=self.icon)

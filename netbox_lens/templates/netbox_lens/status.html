@@ -1,0 +1,118 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "LENS – Backend Status" %}{% endblock %}
+
+{% block content %}
+
+{% if config_error %}
+  <div class="alert alert-danger">
+    <i class="mdi mdi-cog-off" aria-hidden="true"></i>
+    <strong>{% trans "Configuration error" %}:</strong> {{ config_error }}
+  </div>
+{% endif %}
+
+{% for s in statuses %}
+<div class="card mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="{{ s.icon }}" aria-hidden="true"></i>
+    <strong>{{ s.label }}</strong>
+    {% if s.ok %}
+      <span class="badge bg-success ms-auto">{% trans "reachable" %}</span>
+    {% else %}
+      <span class="badge bg-danger ms-auto">{% trans "error" %}</span>
+    {% endif %}
+  </div>
+
+  <div class="card-body">
+    {% if s.error %}
+      <div class="alert alert-danger mb-0">
+        <i class="mdi mdi-alert-circle" aria-hidden="true"></i> {{ s.error }}
+      </div>
+    {% else %}
+      {% with st=s.stats %}
+      <div class="row g-3">
+
+        <div class="col-12 col-md-4">
+          <div class="card h-100 border-0 bg-body-secondary">
+            <div class="card-body">
+              <h6 class="card-subtitle mb-3 text-muted">
+                <i class="mdi mdi-router-network" aria-hidden="true"></i>
+                {% trans "Devices" %}
+              </h6>
+              <table class="table table-sm mb-0">
+                <tr><td>{% trans "Devices" %}</td>
+                    <td class="text-end fw-semibold">{{ st.device_count }}</td></tr>
+                <tr><td>{% trans "Ports total" %}</td>
+                    <td class="text-end fw-semibold">{{ st.device_port_count }}</td></tr>
+                <tr><td>{% trans "Ports up" %}</td>
+                    <td class="text-end fw-semibold">{{ st.device_port_up_count }}</td></tr>
+                <tr><td>{% trans "Links" %}</td>
+                    <td class="text-end fw-semibold">{{ st.device_link_count }}</td></tr>
+                {% if st.wap_count %}
+                <tr><td>{% trans "Access points" %}</td>
+                    <td class="text-end fw-semibold">{{ st.wap_count }}</td></tr>
+                {% endif %}
+                {% if st.phone_count %}
+                <tr><td>{% trans "Phones" %}</td>
+                    <td class="text-end fw-semibold">{{ st.phone_count }}</td></tr>
+                {% endif %}
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <div class="card h-100 border-0 bg-body-secondary">
+            <div class="card-body">
+              <h6 class="card-subtitle mb-3 text-muted">
+                <i class="mdi mdi-ethernet" aria-hidden="true"></i>
+                {% trans "Endpoints" %}
+              </h6>
+              <table class="table table-sm mb-0">
+                <tr><td>{% trans "Active MACs" %}</td>
+                    <td class="text-end fw-semibold">{{ st.node_active_count }}</td></tr>
+                <tr><td>{% trans "MACs total" %}</td>
+                    <td class="text-end fw-semibold">{{ st.node_table_count }}</td></tr>
+                <tr><td>{% trans "Active IPs" %}</td>
+                    <td class="text-end fw-semibold">{{ st.ip_active_count }}</td></tr>
+                <tr><td>{% trans "IPs total" %}</td>
+                    <td class="text-end fw-semibold">{{ st.ip_table_count }}</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <div class="card h-100 border-0 bg-body-secondary">
+            <div class="card-body">
+              <h6 class="card-subtitle mb-3 text-muted">
+                <i class="mdi mdi-information-outline" aria-hidden="true"></i>
+                {% trans "Version info" %}
+              </h6>
+              <table class="table table-sm mb-0">
+                <tr><td>{% trans "Netdisco" %}</td>
+                    <td class="text-end fw-semibold">{{ st.netdisco_ver }}</td></tr>
+                <tr><td>{% trans "PostgreSQL" %}</td>
+                    <td class="text-end fw-semibold">{{ st.pg_ver }}</td></tr>
+                <tr><td>{% trans "Perl" %}</td>
+                    <td class="text-end fw-semibold">{{ st.perl_ver }}</td></tr>
+                <tr><td>{% trans "Schema" %}</td>
+                    <td class="text-end fw-semibold">{{ st.schema_ver }}</td></tr>
+                <tr><td>{% trans "Updated" %}</td>
+                    <td class="text-end fw-semibold">{{ st.day }}</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      {% endwith %}
+    {% endif %}
+  </div>
+</div>
+{% empty %}
+  <div class="alert alert-info">{% trans "No backends configured." %}</div>
+{% endfor %}
+
+{% endblock %}

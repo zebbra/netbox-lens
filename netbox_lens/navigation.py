@@ -12,6 +12,10 @@ menu = PluginMenu(
                     link="plugins:netbox_lens:search",
                     link_text=_("Endpoint Lookup"),
                 ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:status",
+                    link_text=_("Backend Status"),
+                ),
             ),
         ),
     ),

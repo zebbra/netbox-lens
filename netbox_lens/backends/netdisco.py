@@ -2,7 +2,7 @@ import os
 
 import requests
 
-from .base import LensBackend, SearchResult
+from .base import BackendStatus, LensBackend, SearchResult
 
 
 class NetdiscoBackend(LensBackend):
@@ -53,3 +53,28 @@ class NetdiscoBackend(LensBackend):
             result.error = str(e)
 
         return result
+
+    def status(self) -> BackendStatus:
+        s = BackendStatus(backend=self.name, label=self.label, icon=self.icon)
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            s.error = "Netdisco URL is not configured."
+            return s
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/statistics",
+                headers={"Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            s.stats = resp.json()
+        except requests.ConnectionError:
+            s.error = "Could not reach Netdisco."
+        except requests.Timeout:
+            s.error = "Netdisco did not respond in time."
+        except requests.HTTPError as e:
+            s.error = f"HTTP {e.response.status_code}"
+        except Exception as e:
+            s.error = str(e)
+        return s
