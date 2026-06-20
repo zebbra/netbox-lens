@@ -4,7 +4,22 @@
 {% block title %}{% trans "LENS – Endpoint Lookup" %}{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center mb-4">
+<div class="position-relative">
+  <div class="position-absolute top-50 start-50 translate-middle" style="opacity:0.05; pointer-events:none; z-index:0; width:420px; height:420px;">
+    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" width="420" height="420">
+      <circle cx="100" cy="100" r="94" stroke="#2BD9A8" stroke-width="2"/>
+      <circle cx="100" cy="100" r="72" stroke="#2BD9A8" stroke-width="1.5" stroke-opacity="0.4"/>
+      <polygon points="100,62 132.9,81 132.9,119 100,138 67.1,119 67.1,81" stroke="#2BD9A8" stroke-width="2" stroke-linejoin="round"/>
+      <line x1="100" y1="62" x2="144.3" y2="43.3" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
+      <line x1="132.9" y1="81" x2="171.3" y2="110" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
+      <line x1="132.9" y1="119" x2="126.9" y2="166.8" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
+      <line x1="100" y1="138" x2="55.7" y2="156.7" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
+      <line x1="67.1" y1="119" x2="28.7" y2="90" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
+      <line x1="67.1" y1="81" x2="73.1" y2="33.2" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
+    </svg>
+  </div>
+
+<div class="row justify-content-center mb-4" style="position:relative; z-index:1;">
   <div class="col-md-8 col-lg-6">
     <div class="card">
       <div class="card-body">
@@ -42,6 +57,7 @@
       </div>
     </div>
   </div>
+</div>
 </div>
 
 {% if config_error %}
