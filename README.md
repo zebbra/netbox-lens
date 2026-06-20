@@ -1,3 +1,5 @@
+![LENS Banner](banner.svg)
+
 # netbox-lens
 
 **LENS** — Locate Endpoints across Network Systems
