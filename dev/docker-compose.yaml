@@ -1,6 +1,7 @@
 x-netdisco-env: &netdisco-env
   NETDISCO_DOMAIN: discover
   NETDISCO_DB_HOST: netdisco-postgresql
+  NETDISCO_CURRENT_PG_VERSION: "18"
 
 x-netdisco-volumes: &netdisco-volumes
   - /home/sgr/code/netdisco-docker/netdisco/config:/home/netdisco/environments
