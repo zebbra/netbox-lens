@@ -24,7 +24,7 @@ PLUGINS_CONFIG = {
     "netbox_lens": {
         "backends": {
             "netdisco": {
-                "url": os.environ.get("NETDISCO_URL", ""),
+                "url": os.environ.get("NETDISCO_URL", "http://netdisco-web:5000"),
                 # token via LENS_NETDISCO_TOKEN env var
             }
         }
