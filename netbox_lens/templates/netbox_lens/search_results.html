@@ -1,0 +1,168 @@
+{% load i18n %}
+
+{% if not results %}
+  {# no-op: config_error is shown in parent template #}
+
+{% else %}
+
+  {% with any_results=False %}
+  {% for backend in results %}{% if backend.has_results %}{% with any_results=True %}{% endwith %}{% endif %}{% endfor %}
+  {% endwith %}
+
+  {% for backend in results %}
+
+  {# ── Backend error ────────────────────────────────────────────────── #}
+  {% if backend.error %}
+  <div class="alert alert-danger">
+    <i class="{{ backend.icon }}" aria-hidden="true"></i>
+    <strong>{{ backend.label }}:</strong> {{ backend.error }}
+  </div>
+
+  {% elif backend.has_results %}
+
+  <h5 class="mt-2 mb-3 text-muted">
+    <i class="{{ backend.icon }}" aria-hidden="true"></i> {{ backend.label }}
+  </h5>
+
+  {# Port sightings #}
+  {% if backend.sightings %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">
+        <i class="mdi mdi-ethernet-cable" aria-hidden="true"></i>
+        {% trans "Port Sightings" %}
+        <span class="badge bg-secondary ms-1">{{ backend.sightings|length }}</span>
+      </h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-headings mb-0">
+        <thead>
+          <tr>
+            <th>{% trans "MAC" %}</th>
+            <th>{% trans "Switch" %}</th>
+            <th>{% trans "Port" %}</th>
+            <th>{% trans "VLAN" %}</th>
+            <th>{% trans "First Seen" %}</th>
+            <th>{% trans "Last Seen" %}</th>
+            <th>{% trans "Active" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in backend.sightings %}
+          <tr>
+            <td><code>{{ row.mac }}</code></td>
+            <td>{{ row.device.name|default:row.switch }}</td>
+            <td><code>{{ row.port }}</code></td>
+            <td>{{ row.vlan|default:"—" }}</td>
+            <td>{{ row.time_first_stamp|default:"—" }}</td>
+            <td>{{ row.time_last_stamp|default:"—" }}</td>
+            <td>
+              {% if row.active %}<span class="badge bg-success">{% trans "yes" %}</span>
+              {% else %}<span class="badge bg-secondary">{% trans "no" %}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# IP addresses #}
+  {% if backend.ips %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">
+        <i class="mdi mdi-ip-network" aria-hidden="true"></i>
+        {% trans "IP Addresses" %}
+        <span class="badge bg-secondary ms-1">{{ backend.ips|length }}</span>
+      </h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-headings mb-0">
+        <thead>
+          <tr>
+            <th>{% trans "MAC" %}</th>
+            <th>{% trans "IP" %}</th>
+            <th>{% trans "DNS" %}</th>
+            <th>{% trans "Vendor" %}</th>
+            <th>{% trans "Router" %}</th>
+            <th>{% trans "Last Seen" %}</th>
+            <th>{% trans "Active" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in backend.ips %}
+          <tr>
+            <td><code>{{ row.mac }}</code></td>
+            <td><code>{{ row.ip }}</code></td>
+            <td>{{ row.dns|default:"—" }}</td>
+            <td>{{ row.manufacturer.company|default:"—" }}</td>
+            <td>{{ row.router_name|default:row.router_ip|default:"—" }}</td>
+            <td>{{ row.time_last_stamp|default:"—" }}</td>
+            <td>
+              {% if row.active %}<span class="badge bg-success">{% trans "yes" %}</span>
+              {% else %}<span class="badge bg-secondary">{% trans "no" %}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Resolved MACs (IP/hostname search path) #}
+  {% if backend.macs %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">
+        <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i>
+        {% trans "Resolved MACs" %}
+        <span class="badge bg-secondary ms-1">{{ backend.macs|length }}</span>
+      </h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-headings mb-0">
+        <thead>
+          <tr>
+            <th>{% trans "MAC" %}</th>
+            <th>{% trans "IP" %}</th>
+            <th>{% trans "DNS" %}</th>
+            <th>{% trans "Router" %}</th>
+            <th>{% trans "Last Seen" %}</th>
+            <th>{% trans "Active" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in backend.macs %}
+          <tr>
+            <td><code>{{ row.mac }}</code></td>
+            <td><code>{{ row.ip }}</code></td>
+            <td>{{ row.dns|default:"—" }}</td>
+            <td>{{ row.router_name|default:row.router_ip|default:"—" }}</td>
+            <td>{{ row.time_last_stamp|default:"—" }}</td>
+            <td>
+              {% if row.active %}<span class="badge bg-success">{% trans "yes" %}</span>
+              {% else %}<span class="badge bg-secondary">{% trans "no" %}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  {# backend returned no error and no results #}
+  <div class="alert alert-info">
+    <i class="{{ backend.icon }}" aria-hidden="true"></i>
+    {% blocktrans with label=backend.label q=query %}
+      <strong>{{ label }}</strong>: no results for <strong>{{ q }}</strong>.
+    {% endblocktrans %}
+  </div>
+  {% endif %}
+
+  {% endfor %}
+{% endif %}

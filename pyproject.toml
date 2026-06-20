@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "netbox-lens"
+version = "0.1.0"
+description = "LENS – Locate Endpoints across Network Systems. A NetBox plugin for unified endpoint lookup across multiple network backends."
+authors = []
+readme = "README.md"
+license = "Apache-2.0"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
