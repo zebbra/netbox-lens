@@ -93,7 +93,7 @@ services:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/configuration.py:ro
     command: >-
-      sh -c "/opt/netbox/venv/bin/pip install -q /opt/netbox/netbox-lens &&
+      sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
              exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
 
   netbox-worker:
@@ -106,7 +106,7 @@ services:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/configuration.py:ro
     command: >-
-      sh -c "/opt/netbox/venv/bin/pip install -q /opt/netbox/netbox-lens &&
+      sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
              exec /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker"
 
   postgres:
