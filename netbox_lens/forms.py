@@ -36,7 +36,7 @@ class NodeSearchForm(forms.Form):
             normalized = re.sub(r'[:\-\.]', '', q)
             if len(normalized) != 12 or not re.fullmatch(r'[0-9A-Fa-f]+', normalized):
                 raise forms.ValidationError(
-                    f""{q}" does not look like a valid MAC address. "
+                    f'"{q}" does not look like a valid MAC address. '
                     "Expected format: aa:bb:cc:dd:ee:ff"
                 )
         return q
