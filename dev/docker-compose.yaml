@@ -92,15 +92,22 @@ services:
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/plugins.py:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/login/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     command: >-
       sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
              exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
 
   netbox-worker:
     image: ghcr.io/netbox-community/netbox:v4.4.7
+    restart: on-failure
     depends_on:
       netbox:
-        condition: service_started
+        condition: service_healthy
     env_file: netbox.env
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
