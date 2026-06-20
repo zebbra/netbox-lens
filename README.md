@@ -1,4 +1,4 @@
-![LENS Banner](banner.svg)
+![LENS Banner](banner.png)
 
 # netbox-lens
 
