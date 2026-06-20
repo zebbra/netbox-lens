@@ -21,7 +21,10 @@ class NetdiscoBackend(LensBackend):
         try:
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
-                headers={"Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}"},
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
                 params={
                     "q": query,
                     "partial": "false",
