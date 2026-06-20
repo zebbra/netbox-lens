@@ -91,7 +91,7 @@ services:
     env_file: netbox.env
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
-      - ./configuration.py:/etc/netbox/config/configuration.py:ro
+      - ./configuration.py:/etc/netbox/config/plugins.py:ro
     command: >-
       sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
              exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
@@ -104,7 +104,7 @@ services:
     env_file: netbox.env
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
-      - ./configuration.py:/etc/netbox/config/configuration.py:ro
+      - ./configuration.py:/etc/netbox/config/plugins.py:ro
     command: >-
       sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
              exec /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker"
