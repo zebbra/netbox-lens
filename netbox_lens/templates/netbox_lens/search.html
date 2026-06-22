@@ -4,22 +4,7 @@
 {% block title %}{% trans "LENS – Endpoint Lookup" %}{% endblock %}
 
 {% block content %}
-<div class="position-relative">
-  <div class="position-absolute top-50 start-50 translate-middle" style="opacity:0.05; pointer-events:none; z-index:0; width:420px; height:420px;">
-    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" width="420" height="420">
-      <circle cx="100" cy="100" r="94" stroke="#2BD9A8" stroke-width="2"/>
-      <circle cx="100" cy="100" r="72" stroke="#2BD9A8" stroke-width="1.5" stroke-opacity="0.4"/>
-      <polygon points="100,62 132.9,81 132.9,119 100,138 67.1,119 67.1,81" stroke="#2BD9A8" stroke-width="2" stroke-linejoin="round"/>
-      <line x1="100" y1="62" x2="144.3" y2="43.3" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
-      <line x1="132.9" y1="81" x2="171.3" y2="110" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
-      <line x1="132.9" y1="119" x2="126.9" y2="166.8" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
-      <line x1="100" y1="138" x2="55.7" y2="156.7" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
-      <line x1="67.1" y1="119" x2="28.7" y2="90" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
-      <line x1="67.1" y1="81" x2="73.1" y2="33.2" stroke="#2BD9A8" stroke-width="1.75" stroke-linecap="round" stroke-opacity="0.85"/>
-    </svg>
-  </div>
-
-<div class="row justify-content-center mb-4" style="position:relative; z-index:1;">
+<div class="row justify-content-center mb-4">
   <div class="col-md-8 col-lg-6">
     <div class="card">
       <div class="card-body">
@@ -35,15 +20,25 @@
               {% trans "Search" %}
             </button>
           </div>
-          <div class="d-flex align-items-center gap-3">
+          <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="btn-group btn-group-sm" role="group" aria-label="{% trans 'Date range' %}">
+              {% for value, label in form.since.field.choices %}
+              <input type="radio" class="btn-check" name="since" id="since_{{ value }}"
+                     value="{{ value }}" autocomplete="off"
+                     {% if form.since.value == value %}checked
+                     {% elif not form.is_bound and value == 'week' %}checked{% endif %}>
+              <label class="btn btn-outline-secondary" for="since_{{ value }}">{% trans label %}</label>
+              {% endfor %}
+            </div>
+            <div class="vr"></div>
             <div class="form-check">
-              {{ form.archived }}
-              <label class="form-check-label" for="{{ form.archived.id_for_label }}">
-                {{ form.archived.label }}
+              {{ form.partial }}
+              <label class="form-check-label" for="{{ form.partial.id_for_label }}">
+                {{ form.partial.label }}
               </label>
             </div>
             <span id="lens-spinner"
-                  class="htmx-indicator spinner-border spinner-border-sm text-primary"
+                  class="htmx-indicator spinner-border spinner-border-sm text-primary ms-auto"
                   role="status" aria-hidden="true"></span>
           </div>
           {% if form.q.errors %}
@@ -58,18 +53,59 @@
     </div>
   </div>
 </div>
-</div>
-
-{% if config_error %}
-  <div class="alert alert-danger">
-    <i class="mdi mdi-cog-off" aria-hidden="true"></i>
-    <strong>{% trans "Configuration error" %}:</strong> {{ config_error }}
-  </div>
-{% endif %}
 
 <div id="lens-results">
   {% if form.is_bound %}
     {% include 'netbox_lens/search_results.html' %}
   {% endif %}
 </div>
+
+<style>
+code.lens-copy { cursor: pointer; border-radius: 3px; }
+</style>
+<script>
+(function () {
+  var partial = document.getElementById('id_partial');
+  if (!partial) return;
+  function enforcePartialMode() {
+    var radios = document.querySelectorAll('input[name="since"]');
+    if (partial.checked) {
+      radios.forEach(function (r) {
+        r.disabled = r.value !== 'now';
+        if (r.value === 'now') r.checked = true;
+      });
+    } else {
+      radios.forEach(function (r) { r.disabled = false; });
+    }
+  }
+  partial.addEventListener('change', enforcePartialMode);
+  enforcePartialMode();
+})();
+
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('code.lens-copy');
+  if (!el) return;
+  var val = el.dataset.value || el.textContent.trim();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(val).catch(function () {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = val;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  el.style.outline = '2px solid #2bd9a8';
+  el.style.transition = 'outline-color .4s';
+  setTimeout(function () {
+    el.style.outlineColor = 'transparent';
+    setTimeout(function () {
+      el.style.outline = '';
+      el.style.transition = '';
+    }, 450);
+  }, 600);
+});
+</script>
 {% endblock %}

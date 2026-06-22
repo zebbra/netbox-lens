@@ -1,7 +1,13 @@
 {% load i18n %}
 
-{% if not results %}
-  {# no-op: config_error is shown in parent template #}
+{% if config_error %}
+  <div class="alert alert-danger">
+    <i class="mdi mdi-cog-off" aria-hidden="true"></i>
+    <strong>{% trans "Configuration error" %}:</strong> {{ config_error }}
+  </div>
+
+{% elif not results %}
+  {# no-op: form not yet submitted or invalid #}
 
 {% else %}
 
@@ -24,14 +30,181 @@
     <i class="{{ backend.icon }}" aria-hidden="true"></i> {{ backend.label }}
   </h5>
 
-  {# Port sightings #}
+  {# Port timeline #}
   {% if backend.sightings %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">
+        <i class="mdi mdi-chart-gantt" aria-hidden="true"></i>
+        {% trans "Port Timeline" %}
+      </h6>
+    </div>
+    <div class="card-body p-2">
+      <div id="lens-tl-{{ backend.name }}" style="width:100%;overflow-x:auto"></div>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var sightings = {{ backend.sightings_json|safe }};
+    var el = document.getElementById('lens-tl-{{ backend.name }}');
+    if (!el || !sightings.length) return;
+
+    // only meaningful for single-MAC searches
+    var macs = [...new Set(sightings.map(function(s){ return s.mac; }))];
+    if (macs.length !== 1) { el.style.display = 'none'; return; }
+
+    var PALETTE = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f',
+                   '#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
+    var ROW_H = 28, GAP = 4, LABEL_W = 110, AXIS_H = 28, PAD = 3;
+
+    function portKey(s)   { return s.switch + ':' + s.port; }
+    function devKey(s)    { return s.switch; }
+    function portShort(s) {
+      return s.port.replace(/^GigabitEthernet/, 'Gi')
+                   .replace(/^TenGigabitEthernet/, 'Te')
+                   .replace(/^FastEthernet/, 'Fa');
+    }
+    function devShort(s)  {
+      return ((s.device || {}).name || s.switch || '').split('.')[0];
+    }
+    function vlanKey(s)   { return String(s.vlan || '0'); }
+    function vlanLabel(s) { return s.vlan && s.vlan !== '0' ? 'v' + s.vlan : '—'; }
+
+    var sorted = sightings.slice().sort(function(a,b){
+      return new Date(a.time_first) - new Date(b.time_first);
+    });
+
+    // stable color per unique key (assigned in time order)
+    var portColors = {}, portLabels = {}, devColors = {}, devLabels = {}, vlanColors = {}, vlanLabels = {};
+    var ci = 0, di = 0, vi = 0;
+    sorted.forEach(function(s) {
+      var pk = portKey(s), dk = devKey(s), vk = vlanKey(s);
+      if (!portColors[pk]) { portColors[pk] = PALETTE[ci++ % PALETTE.length]; portLabels[pk] = portShort(s); }
+      if (!devColors[dk])  { devColors[dk]  = PALETTE[di++ % PALETTE.length]; devLabels[dk]  = devShort(s);  }
+      if (!vlanColors[vk]) { vlanColors[vk] = PALETTE[vi++ % PALETTE.length]; vlanLabels[vk] = vlanLabel(s); }
+    });
+
+    // time range
+    var tMin = Infinity, tMax = -Infinity;
+    sightings.forEach(function(s) {
+      var t0 = new Date(s.time_first).getTime(), t1 = new Date(s.time_last).getTime();
+      if (t0 < tMin) tMin = t0;
+      if (t1 > tMax) tMax = t1;
+    });
+    var now = Date.now();
+    if (now > tMax) tMax = now;
+    var span = tMax - tMin || 1;
+
+    var W    = Math.max(el.clientWidth || 600, 400);
+    var barW = W - LABEL_W - 8;
+    var H    = 3 * ROW_H + 2 * GAP + AXIS_H;
+
+    function px(t)      { return LABEL_W + (t - tMin) / span * barW; }
+    function fmtDate(t) { return new Date(t).toISOString().slice(0, 10); }
+    function fmtDT(t)   { return new Date(t).toISOString().slice(0, 16).replace('T', ' '); }
+
+    var tickCount = Math.min(6, Math.max(2, Math.floor(barW / 100)));
+    var ticks = [];
+    for (var i = 0; i <= tickCount; i++) ticks.push(tMin + span * i / tickCount);
+
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+    svg.style.display = 'block';
+
+    function el_(tag, attrs, parent) {
+      var e = document.createElementNS(ns, tag);
+      for (var k in attrs) e.setAttribute(k, attrs[k]);
+      if (parent) parent.appendChild(e);
+      return e;
+    }
+    function txt(text, x, y, attrs, parent) {
+      var e = el_('text', Object.assign({x:x, y:y, 'font-size':'11', 'font-family':'monospace'}, attrs), parent);
+      e.textContent = text;
+      return e;
+    }
+
+    var cs = getComputedStyle(document.documentElement);
+    var textColor = cs.getPropertyValue('--bs-secondary-color').trim() || cs.getPropertyValue('--bs-body-color').trim() || '#888';
+    var gridColor = cs.getPropertyValue('--bs-border-color').trim() || '#ccc';
+    var trackBg   = 'transparent';
+    var nowColor  = '#e53';
+
+    // draw one state-timeline row
+    function drawRow(yOff, rowLabel, segments, keyFn, colorMap, labelMap) {
+      el_('rect', {x: LABEL_W, y: yOff, width: barW, height: ROW_H,
+        fill: trackBg, rx: 3}, svg);
+
+      // grid lines through this row
+      ticks.forEach(function(t) {
+        var x = Math.round(px(t));
+        el_('line', {x1:x, y1:yOff, x2:x, y2:yOff+ROW_H,
+          stroke: gridColor, 'stroke-width':1}, svg);
+      });
+
+      txt(rowLabel, LABEL_W - 6, yOff + ROW_H/2 + 4, {'text-anchor':'end', fill:textColor}, svg);
+
+      segments.forEach(function(s) {
+        var k  = keyFn(s);
+        var x0 = px(new Date(s.time_first).getTime());
+        var x1 = px(new Date(s.time_last).getTime());
+        var bw = Math.max(x1 - x0, 3);
+        var g  = el_('g', {}, svg);
+
+        var bar = el_('rect', {
+          x: x0, y: yOff + PAD, width: bw, height: ROW_H - PAD*2,
+          rx: 2, fill: colorMap[k], opacity: s.active ? '1' : '0.55'
+        }, g);
+
+        if (bw > 36) {
+          el_('text', {
+            x: x0 + bw/2, y: yOff + ROW_H/2 + 4,
+            'text-anchor':'middle', 'font-size':'10', 'font-family':'monospace',
+            fill:'white', 'pointer-events':'none',
+            style:'text-shadow:0 0 3px rgba(0,0,0,.7)'
+          }, g).textContent = labelMap[k];
+        }
+
+        var tip = document.createElementNS(ns, 'title');
+        tip.textContent = labelMap[k] + '\n'
+          + fmtDT(new Date(s.time_first).getTime()) + ' → '
+          + fmtDT(new Date(s.time_last).getTime())
+          + (s.active ? '\n● active' : '\n○ inactive');
+        bar.appendChild(tip);
+      });
+    }
+
+    drawRow(0,                 'port',   sorted, portKey,  portColors,  portLabels);
+    drawRow(ROW_H + GAP,       'device', sorted, devKey,   devColors,   devLabels);
+    drawRow(2 * (ROW_H + GAP), 'vlan',   sorted, vlanKey,  vlanColors,  vlanLabels);
+
+    // shared axis
+    var axisY = 3 * ROW_H + 2 * GAP;
+    ticks.forEach(function(t) {
+      txt(fmtDate(t), Math.round(px(t)), axisY + AXIS_H - 10,
+        {'text-anchor':'middle', fill:textColor}, svg);
+    });
+
+    if (now >= tMin && now <= tMax) {
+      var nx = Math.round(px(now));
+      el_('line', {x1:nx, y1:0, x2:nx, y2:axisY,
+        stroke:nowColor, 'stroke-width':1.5, 'stroke-dasharray':'4 3'}, svg);
+      txt('now', nx, axisY + AXIS_H - 10,
+        {'text-anchor':'middle', fill:nowColor, 'font-weight':'bold'}, svg);
+    }
+
+    el.appendChild(svg);
+  })();
+  </script>
+
+  {# Port sightings #}
   <div class="card mb-3">
     <div class="card-header">
       <h6 class="mb-0">
         <i class="mdi mdi-ethernet-cable" aria-hidden="true"></i>
         {% trans "Port Sightings" %}
-        <span class="badge bg-secondary ms-1">{{ backend.sightings|length }}</span>
+        <span class="badge text-bg-secondary ms-1">{{ backend.sightings|length }}</span>
       </h6>
     </div>
     <div class="table-responsive">
@@ -39,7 +212,7 @@
         <thead>
           <tr>
             <th>{% trans "MAC" %}</th>
-            <th>{% trans "Switch" %}</th>
+            <th>{% trans "Device" %}</th>
             <th>{% trans "Port" %}</th>
             <th>{% trans "VLAN" %}</th>
             <th>{% trans "First Seen" %}</th>
@@ -49,18 +222,29 @@
         </thead>
         <tbody>
           {% for row in backend.sightings %}
+          {% with dname=row.device.name|default:row.switch %}
           <tr>
-            <td><code>{{ row.mac }}</code></td>
-            <td>{{ row.device.name|default:row.switch }}</td>
-            <td><code>{{ row.port }}</code></td>
+            <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
+            <td>
+              <span class="d-inline-flex align-items-center gap-1">
+                <code class="lens-copy" data-value="{{ dname }}">{{ dname }}</code>
+                {% if row.nb_device_url %}
+                <a href="{{ row.nb_device_url }}" title="{% trans 'Open in NetBox' %}" class="text-muted">
+                  <i class="mdi mdi-open-in-new" style="font-size:.85em" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+              </span>
+            </td>
+            <td><code class="lens-copy" data-value="{{ row.port }}">{{ row.port }}</code></td>
             <td>{{ row.vlan|default:"—" }}</td>
             <td>{{ row.time_first_stamp|default:"—" }}</td>
             <td>{{ row.time_last_stamp|default:"—" }}</td>
             <td>
-              {% if row.active %}<span class="badge bg-success">{% trans "yes" %}</span>
-              {% else %}<span class="badge bg-secondary">{% trans "no" %}</span>{% endif %}
+              {% if row.active %}<span class="badge text-bg-green">{% trans "yes" %}</span>
+              {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}
             </td>
           </tr>
+          {% endwith %}
           {% endfor %}
         </tbody>
       </table>
@@ -75,7 +259,7 @@
       <h6 class="mb-0">
         <i class="mdi mdi-ip-network" aria-hidden="true"></i>
         {% trans "IP Addresses" %}
-        <span class="badge bg-secondary ms-1">{{ backend.ips|length }}</span>
+        <span class="badge text-bg-secondary ms-1">{{ backend.ips|length }}</span>
       </h6>
     </div>
     <div class="table-responsive">
@@ -86,25 +270,38 @@
             <th>{% trans "IP" %}</th>
             <th>{% trans "DNS" %}</th>
             <th>{% trans "Vendor" %}</th>
-            <th>{% trans "Router" %}</th>
+            <th>{% trans "Device" %}</th>
             <th>{% trans "Last Seen" %}</th>
             <th>{% trans "Active" %}</th>
           </tr>
         </thead>
         <tbody>
           {% for row in backend.ips %}
+          {% with dname=row.router_name|default:row.router_ip %}
           <tr>
-            <td><code>{{ row.mac }}</code></td>
-            <td><code>{{ row.ip }}</code></td>
+            <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
+            <td><code class="lens-copy" data-value="{{ row.ip }}">{{ row.ip }}</code></td>
             <td>{{ row.dns|default:"—" }}</td>
             <td>{{ row.manufacturer.company|default:"—" }}</td>
-            <td>{{ row.router_name|default:row.router_ip|default:"—" }}</td>
+            <td>
+              {% if dname %}
+              <span class="d-inline-flex align-items-center gap-1">
+                <code class="lens-copy" data-value="{{ dname }}">{{ dname }}</code>
+                {% if row.nb_device_url %}
+                <a href="{{ row.nb_device_url }}" title="{% trans 'Open in NetBox' %}" class="text-muted">
+                  <i class="mdi mdi-open-in-new" style="font-size:.85em" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+              </span>
+              {% else %}—{% endif %}
+            </td>
             <td>{{ row.time_last_stamp|default:"—" }}</td>
             <td>
-              {% if row.active %}<span class="badge bg-success">{% trans "yes" %}</span>
-              {% else %}<span class="badge bg-secondary">{% trans "no" %}</span>{% endif %}
+              {% if row.active %}<span class="badge text-bg-green">{% trans "yes" %}</span>
+              {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}
             </td>
           </tr>
+          {% endwith %}
           {% endfor %}
         </tbody>
       </table>
@@ -119,7 +316,7 @@
       <h6 class="mb-0">
         <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i>
         {% trans "Resolved MACs" %}
-        <span class="badge bg-secondary ms-1">{{ backend.macs|length }}</span>
+        <span class="badge text-bg-secondary ms-1">{{ backend.macs|length }}</span>
       </h6>
     </div>
     <div class="table-responsive">
@@ -137,14 +334,14 @@
         <tbody>
           {% for row in backend.macs %}
           <tr>
-            <td><code>{{ row.mac }}</code></td>
-            <td><code>{{ row.ip }}</code></td>
+            <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
+            <td><code class="lens-copy" data-value="{{ row.ip }}">{{ row.ip }}</code></td>
             <td>{{ row.dns|default:"—" }}</td>
             <td>{{ row.router_name|default:row.router_ip|default:"—" }}</td>
             <td>{{ row.time_last_stamp|default:"—" }}</td>
             <td>
-              {% if row.active %}<span class="badge bg-success">{% trans "yes" %}</span>
-              {% else %}<span class="badge bg-secondary">{% trans "no" %}</span>{% endif %}
+              {% if row.active %}<span class="badge text-bg-green">{% trans "yes" %}</span>
+              {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}
             </td>
           </tr>
           {% endfor %}

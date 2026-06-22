@@ -1,3 +1,4 @@
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -15,6 +16,10 @@ class SearchResult:
     @property
     def has_results(self):
         return bool(self.sightings or self.ips or self.macs)
+
+    @property
+    def sightings_json(self):
+        return json.dumps(self.sightings, default=str)
 
 
 @dataclass
@@ -39,8 +44,11 @@ class LensBackend(ABC):
         self.config = config
 
     @abstractmethod
-    def search(self, query: str, archived: bool = False) -> SearchResult:
+    def search(self, query: str, partial: bool = False, archived: bool = False, since: str | None = None) -> SearchResult:
         ...
+
+    def device_nodes(self, device_ip: str) -> list:
+        return []
 
     def status(self) -> BackendStatus:
         return BackendStatus(backend=self.name, label=self.label, icon=self.icon)

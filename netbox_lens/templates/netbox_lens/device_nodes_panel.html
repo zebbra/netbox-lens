@@ -1,0 +1,105 @@
+{% load i18n %}
+
+{% if lens_stats %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>LENS</strong>
+    <small class="text-muted ms-auto"><code>{{ lens_device_ip }}</code></small>
+  </div>
+  <div class="card-body">
+    <div class="d-flex gap-4">
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.macs }}</div>
+        <div class="text-muted small">{% trans "Active MACs" %}</div>
+      </div>
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.ports }}</div>
+        <div class="text-muted small">{% trans "Ports" %}</div>
+      </div>
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.vlans }}</div>
+        <div class="text-muted small">{% trans "VLANs" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% elif lens_nodes %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>LENS</strong>
+    {% if lens_port %}
+    <span class="text-muted">— {{ lens_port }}</span>
+    {% endif %}
+    <span class="badge text-bg-secondary">{{ lens_nodes|length }}</span>
+    <small class="text-muted ms-auto"><code>{{ lens_device_ip }}</code></small>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-headings mb-0">
+      <thead>
+        <tr>
+          <th>{% trans "MAC" %}</th>
+          {% if not lens_port %}<th>{% trans "Port" %}</th>{% endif %}
+          <th>{% trans "VLAN" %}</th>
+          <th>{% trans "First Seen" %}</th>
+          <th>{% trans "Last Seen" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for node in lens_nodes %}
+        <tr>
+          <td><code class="lens-copy" data-value="{{ node.mac }}">{{ node.mac }}</code></td>
+          {% if not lens_port %}
+          <td><code class="lens-copy" data-value="{{ node.port }}">{{ node.port }}</code></td>
+          {% endif %}
+          <td>{{ node.vlan|default:"—" }}</td>
+          <td>{{ node.time_first|slice:":16"|default:"—" }}</td>
+          <td>{{ node.time_last|slice:":16"|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>code.lens-copy { cursor: pointer; border-radius: 3px; }</style>
+<script>
+(function () {
+  if (window._lenscopying) return;
+  window._lenscopying = true;
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('code.lens-copy');
+    if (!el) return;
+    var val = el.dataset.value || el.textContent.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).catch(function () {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = val; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    el.style.outline = '2px solid #2bd9a8';
+    el.style.transition = 'outline-color .4s';
+    setTimeout(function () {
+      el.style.outlineColor = 'transparent';
+      setTimeout(function () { el.style.outline = ''; el.style.transition = ''; }, 450);
+    }, 600);
+  });
+}());
+</script>
+
+{% elif lens_device_ip or lens_port %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>LENS</strong>
+    {% if lens_port %}<span class="text-muted">— {{ lens_port }}</span>{% endif %}
+  </div>
+  <div class="card-body text-muted">
+    {% trans "No nodes discovered on this device." %}
+  </div>
+</div>
+{% endif %}
