@@ -11,10 +11,12 @@ menu = PluginMenu(
                 PluginMenuItem(
                     link="plugins:netbox_lens:search",
                     link_text=_("Endpoint Lookup"),
+                    permissions=["netbox_lens.use_lens"],
                 ),
                 PluginMenuItem(
                     link="plugins:netbox_lens:status",
                     link_text=_("Backend Status"),
+                    permissions=["netbox_lens.use_lens"],
                 ),
             ),
         ),

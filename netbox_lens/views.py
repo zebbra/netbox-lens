@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
 from django.conf import settings
+from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.shortcuts import render
 from django.views import View
 from utilities.htmx import htmx_partial
@@ -43,7 +44,9 @@ def _enrich_results(results):
                 ip["nb_device_url"] = url_map[name]
 
 
-class LensStatusView(View):
+class LensStatusView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.use_lens"
+
     def get(self, request):
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
         backends = get_backends(config)
@@ -61,7 +64,9 @@ class LensStatusView(View):
         })
 
 
-class LensSearchView(View):
+class LensSearchView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.use_lens"
+
     def get(self, request):
         form = NodeSearchForm(request.GET or None)
         context = {"form": form}

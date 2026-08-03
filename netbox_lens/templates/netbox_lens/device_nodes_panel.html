@@ -5,7 +5,7 @@
   <div class="card-header d-flex align-items-center gap-2">
     <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
     <strong>LENS</strong>
-    <small class="text-muted ms-auto"><code>{{ lens_device_ip }}</code></small>
+    {% if lens_backends %}<small class="text-muted ms-auto">— {% trans "powered by" %} {{ lens_backends|join:", " }}</small>{% endif %}
   </div>
   <div class="card-body">
     <div class="d-flex gap-4">
@@ -22,6 +22,23 @@
         <div class="text-muted small">{% trans "VLANs" %}</div>
       </div>
     </div>
+    <hr class="my-3">
+    <table class="table table-sm text-muted small mb-2">
+      <tbody>
+        <tr><td class="border-0 py-0 ps-0">{% trans "Linked IP" %}</td><td class="border-0 py-0"><code>{{ lens_device_ip }}</code></td></tr>
+        {% for label, summary in lens_summaries %}
+        {% if summary.last_discover %}
+        <tr><td class="border-0 py-0 ps-0">{% trans "Last discover" %}</td><td class="border-0 py-0">{{ summary.last_discover|slice:":16" }}</td></tr>
+        {% endif %}
+        {% if summary.last_macsuck %}
+        <tr><td class="border-0 py-0 ps-0">{% trans "Last macsuck" %}</td><td class="border-0 py-0">{{ summary.last_macsuck|slice:":16" }}</td></tr>
+        {% endif %}
+        {% if summary.last_arpnip %}
+        <tr><td class="border-0 py-0 ps-0">{% trans "Last arpnip" %}</td><td class="border-0 py-0">{{ summary.last_arpnip|slice:":16" }}</td></tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

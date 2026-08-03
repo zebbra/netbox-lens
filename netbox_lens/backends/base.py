@@ -50,5 +50,8 @@ class LensBackend(ABC):
     def device_nodes(self, device_ip: str) -> list:
         return []
 
+    def device_summary(self, device_ip: str) -> dict:
+        return {}
+
     def status(self) -> BackendStatus:
         return BackendStatus(backend=self.name, label=self.label, icon=self.icon)

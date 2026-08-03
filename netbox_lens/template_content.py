@@ -18,6 +18,17 @@ def _device_nodes(backends, device_ip, port=None):
     return nodes
 
 
+def _device_summaries(backends, device_ip):
+    summaries = []
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(b.device_summary, device_ip): b for b in backends}
+        for future in as_completed(futures):
+            summary = future.result()
+            if summary:
+                summaries.append((futures[future].label, summary))
+    return summaries
+
+
 def _device_ip(device):
     if not device.primary_ip4:
         return None
@@ -27,7 +38,9 @@ def _device_ip(device):
 class DeviceLensPanel(PluginTemplateExtension):
     models = ["dcim.device"]
 
-    def full_width_page(self):
+    def right_page(self):
+        if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
+            return ""
         ip = _device_ip(self.context["object"])
         if not ip:
             return ""
@@ -41,9 +54,12 @@ class DeviceLensPanel(PluginTemplateExtension):
             "ports": len({n["port"] for n in nodes if n.get("port")}),
             "vlans": len({n["vlan"] for n in nodes if n.get("vlan") and n["vlan"] != "0"}),
         }
+        summaries = _device_summaries(backends, ip)
         return self.render("netbox_lens/device_nodes_panel.html", extra_context={
             "lens_stats": stats,
             "lens_device_ip": ip,
+            "lens_summaries": summaries,
+            "lens_backends": [b.label for b in backends],
         })
 
 
@@ -51,6 +67,8 @@ class InterfaceLensPanel(PluginTemplateExtension):
     models = ["dcim.interface"]
 
     def full_width_page(self):
+        if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
+            return ""
         iface = self.context["object"]
         ip = _device_ip(iface.device)
         if not ip:
