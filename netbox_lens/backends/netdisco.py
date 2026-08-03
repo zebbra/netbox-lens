@@ -113,6 +113,38 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
+    def device_neighbors(self, device_ip: str) -> list:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/object/device/{device_ip}/ports",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else []
+            if not isinstance(data, list):
+                return []
+            return [
+                {
+                    "port": p.get("port"),
+                    "remote_port": p.get("remote_port"),
+                    "remote_ip": p.get("remote_ip"),
+                    "remote_type": p.get("remote_type"),
+                    "remote_id": p.get("remote_id"),
+                }
+                for p in data
+                if p.get("remote_ip") or p.get("remote_id")
+            ]
+        except Exception:
+            return []
+
     def device_summary(self, device_ip: str) -> dict:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
@@ -132,12 +164,63 @@ class NetdiscoBackend(LensBackend):
             if not isinstance(data, dict):
                 return {}
             return {
+                "model": data.get("model"),
+                "os": data.get("os"),
+                "os_ver": data.get("os_ver"),
+                "first_discovered": data.get("creation"),
                 "last_discover": data.get("last_discover"),
                 "last_macsuck": data.get("last_macsuck"),
                 "last_arpnip": data.get("last_arpnip"),
             }
         except Exception:
             return {}
+
+    def device_web_url(self, device_ip: str) -> str | None:
+        web_url = self.config.get("web_url", "").rstrip("/")
+        if not web_url:
+            return None
+        return f"{web_url}/device?tab=details&q={device_ip}"
+
+    def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return False, "Netdisco URL is not configured."
+        admin_token = os.environ.get("LENS_NETDISCO_ADMIN_TOKEN", self.config.get("admin_token", ""))
+        if not admin_token:
+            return False, "No Netdisco admin token configured for triggering jobs."
+        try:
+            resp = requests.post(
+                f"{base_url}/api/v1/queue/jobs",
+                headers={
+                    "Authorization": f"Bearer {admin_token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                json=[{"action": "discover", "device": device_ip}],
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+                allow_redirects=False,
+            )
+            if resp.status_code in (301, 302, 303):
+                return False, "Netdisco rejected the admin token (insufficient role for job triggering)."
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if isinstance(data, dict) and data.get("success"):
+                return True, f"Discover job queued for {device_ip}."
+            return False, "Netdisco did not confirm the job was queued."
+        except requests.ConnectionError:
+            return False, "Could not reach Netdisco — check the configured URL."
+        except requests.Timeout:
+            return False, "Netdisco did not respond in time."
+        except requests.HTTPError as e:
+            status = e.response.status_code
+            if status == 401:
+                return False, "Netdisco rejected the admin token (401 Unauthorized)."
+            elif status == 403:
+                return False, "Netdisco admin token lacks permission to queue jobs (403 Forbidden)."
+            return False, f"Netdisco returned HTTP {status}."
+        except Exception as e:
+            return False, str(e)
 
     def status(self) -> BackendStatus:
         s = BackendStatus(backend=self.name, label=self.label, icon=self.icon)

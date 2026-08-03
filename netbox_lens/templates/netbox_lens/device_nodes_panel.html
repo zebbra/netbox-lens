@@ -1,4 +1,5 @@
 {% load i18n %}
+{% load lens_filters %}
 
 {% if lens_stats %}
 <div class="card mb-3">
@@ -21,24 +22,105 @@
         <div class="fs-4 fw-bold">{{ lens_stats.vlans }}</div>
         <div class="text-muted small">{% trans "VLANs" %}</div>
       </div>
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.neighbors }}</div>
+        <div class="text-muted small">{% trans "Neighbors" %}</div>
+      </div>
     </div>
     <hr class="my-3">
-    <table class="table table-sm text-muted small mb-2">
+    <div class="row">
+      <div class="col-6">
+        <table class="table table-hover attr-table table-sm mb-2">
+          <tr>
+            <th scope="row">{% trans "Linked IP" %}</th>
+            <td>
+              {{ lens_device_ip }}
+              {% for label, url in lens_web_links %}
+              <a href="{{ url }}" target="_blank" rel="noopener" title="{% trans "Open in" %} {{ label }}"><i class="mdi mdi-open-in-new" aria-hidden="true"></i></a>
+              {% endfor %}
+            </td>
+          </tr>
+          {% for label, summary in lens_summaries %}
+          {% if summary.model %}
+          <tr><th scope="row">{% trans "Model" %}</th><td>{{ summary.model }}</td></tr>
+          {% endif %}
+          {% if summary.os %}
+          <tr><th scope="row">{% trans "OS" %}</th><td>{{ summary.os }}</td></tr>
+          {% endif %}
+          {% if summary.os_ver %}
+          <tr><th scope="row">{% trans "Release" %}</th><td>{{ summary.os_ver }}</td></tr>
+          {% endif %}
+          {% endfor %}
+        </table>
+      </div>
+      <div class="col-6">
+        <table class="table table-hover attr-table table-sm mb-2">
+          {% for label, summary in lens_summaries %}
+          {% if summary.first_discovered %}
+          <tr>
+            <th scope="row">{% trans "First discovered" %}</th>
+            <td><span title="{{ summary.first_discovered|lens_absolute }}">{{ summary.first_discovered|lens_relative }}</span></td>
+          </tr>
+          {% endif %}
+          {% if summary.last_discover %}
+          <tr>
+            <th scope="row">{% trans "Last discover" %}</th>
+            <td>
+              <span title="{{ summary.last_discover|lens_absolute }}">{{ summary.last_discover|lens_relative }}</span>
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:discover' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2">
+                  <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Discover" %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+          {% if summary.last_macsuck %}
+          <tr>
+            <th scope="row">{% trans "Last macsuck" %}</th>
+            <td><span title="{{ summary.last_macsuck|lens_absolute }}">{{ summary.last_macsuck|lens_relative }}</span></td>
+          </tr>
+          {% endif %}
+          {% if summary.last_arpnip %}
+          <tr>
+            <th scope="row">{% trans "Last arpnip" %}</th>
+            <td><span title="{{ summary.last_arpnip|lens_absolute }}">{{ summary.last_arpnip|lens_relative }}</span></td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+
+    {% if lens_neighbors %}
+    <table class="table table-hover table-headings mb-0">
+      <thead>
+        <tr>
+          <th>{% trans "Local Port" %}</th>
+          <th>{% trans "Neighbor" %}</th>
+          <th>{% trans "Remote Port" %}</th>
+        </tr>
+      </thead>
       <tbody>
-        <tr><td class="border-0 py-0 ps-0">{% trans "Linked IP" %}</td><td class="border-0 py-0"><code>{{ lens_device_ip }}</code></td></tr>
-        {% for label, summary in lens_summaries %}
-        {% if summary.last_discover %}
-        <tr><td class="border-0 py-0 ps-0">{% trans "Last discover" %}</td><td class="border-0 py-0">{{ summary.last_discover|slice:":16" }}</td></tr>
-        {% endif %}
-        {% if summary.last_macsuck %}
-        <tr><td class="border-0 py-0 ps-0">{% trans "Last macsuck" %}</td><td class="border-0 py-0">{{ summary.last_macsuck|slice:":16" }}</td></tr>
-        {% endif %}
-        {% if summary.last_arpnip %}
-        <tr><td class="border-0 py-0 ps-0">{% trans "Last arpnip" %}</td><td class="border-0 py-0">{{ summary.last_arpnip|slice:":16" }}</td></tr>
-        {% endif %}
+        {% for n in lens_neighbors %}
+        <tr>
+          <td>{{ n.port|default:"—" }}</td>
+          <td>
+            {% if n.nb_device_url %}
+            <a href="{{ n.nb_device_url }}">{{ n.remote_id|default:n.remote_ip }}</a>
+            {% else %}
+            {{ n.remote_id|default:n.remote_ip|default:"—" }}
+            {% endif %}
+          </td>
+          <td>{{ n.remote_port|default:"—" }}</td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% endif %}
   </div>
 </div>
 

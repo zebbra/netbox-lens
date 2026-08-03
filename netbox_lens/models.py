@@ -15,4 +15,5 @@ class Lens(models.Model):
         default_permissions = ()
         permissions = (
             ("use_lens", "Can access LENS endpoint lookup"),
+            ("trigger_lens", "Can trigger Netdisco discovery jobs"),
         )

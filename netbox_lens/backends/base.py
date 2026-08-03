@@ -53,5 +53,14 @@ class LensBackend(ABC):
     def device_summary(self, device_ip: str) -> dict:
         return {}
 
+    def device_neighbors(self, device_ip: str) -> list:
+        return []
+
+    def device_web_url(self, device_ip: str) -> str | None:
+        return None
+
+    def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
+        return False, f"{self.label} does not support triggering discovery."
+
     def status(self) -> BackendStatus:
         return BackendStatus(backend=self.name, label=self.label, icon=self.icon)

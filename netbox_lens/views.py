@@ -2,8 +2,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from utilities.htmx import htmx_partial
 
@@ -14,6 +15,12 @@ try:
     from dcim.models import Device as NbDevice
 except ImportError:
     NbDevice = None
+
+
+def _device_ip(device):
+    if not device.primary_ip4:
+        return None
+    return str(device.primary_ip4.address.ip)
 
 
 def _enrich_results(results):
@@ -110,3 +117,29 @@ class LensSearchView(PermissionRequiredMixin, View):
             return render(request, "netbox_lens/search_results.html", context)
 
         return render(request, "netbox_lens/search.html", context)
+
+
+class LensDiscoverView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        if not ip:
+            messages.error(request, "This device has no primary IPv4 address.")
+            return redirect(device.get_absolute_url())
+
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+        backends = get_backends(config)
+        if not backends:
+            messages.error(request, "No backends are configured.")
+            return redirect(device.get_absolute_url())
+
+        for backend in backends:
+            success, message = backend.trigger_discover(ip)
+            if success:
+                messages.success(request, message)
+            else:
+                messages.error(request, message)
+
+        return redirect(device.get_absolute_url())
