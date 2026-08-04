@@ -38,6 +38,17 @@
               </button>
             </div>
           </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-6">
+              <div class="btn-group btn-group-sm lens-date-presets" role="group" aria-label="{% trans 'Date presets' %}">
+                <button type="button" class="btn btn-outline-secondary" data-preset="1">{% trans "Today" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="7">{% trans "7d" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="14">{% trans "2w" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="30">{% trans "1mo" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="clear">{% trans "Clear" %}</button>
+              </div>
+            </div>
+          </div>
           {% if form.non_field_errors %}
           {% for error in form.non_field_errors %}
           <div class="alert alert-warning mt-2 mb-0 py-2">
@@ -59,4 +70,33 @@
 {% elif searched %}
 {% include 'netbox_lens/arp_history_table.html' %}
 {% endif %}
+
+<script>
+(function () {
+  var dateFrom = document.getElementById('id_date_from');
+  var dateTo = document.getElementById('id_date_to');
+  var presetGroup = document.querySelector('.lens-date-presets');
+  if (!dateFrom || !dateTo || !presetGroup) return;
+
+  function fmt(d) {
+    return d.toISOString().slice(0, 10);
+  }
+
+  presetGroup.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-preset]');
+    if (!btn) return;
+    if (btn.dataset.preset === 'clear') {
+      dateFrom.value = '';
+      dateTo.value = '';
+      return;
+    }
+    var days = parseInt(btn.dataset.preset, 10);
+    var to = new Date();
+    var from = new Date();
+    from.setDate(from.getDate() - days);
+    dateTo.value = fmt(to);
+    dateFrom.value = fmt(from);
+  });
+})();
+</script>
 {% endblock %}

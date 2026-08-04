@@ -26,6 +26,13 @@
               {{ form.date_from }}
               <label class="form-label small text-muted mb-0" for="{{ form.date_to.id_for_label }}">{{ form.date_to.label }}</label>
               {{ form.date_to }}
+              <div class="btn-group btn-group-sm lens-date-presets" role="group" aria-label="{% trans 'Date presets' %}">
+                <button type="button" class="btn btn-outline-secondary" data-preset="1">{% trans "Today" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="7">{% trans "7d" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="14">{% trans "2w" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="30">{% trans "1mo" %}</button>
+                <button type="button" class="btn btn-outline-secondary" data-preset="clear">{% trans "Clear" %}</button>
+              </div>
             </div>
             <div class="vr"></div>
             <div class="form-check">
@@ -70,13 +77,39 @@ code.lens-copy { cursor: pointer; border-radius: 3px; }
   var partial = document.getElementById('id_partial');
   var dateFrom = document.getElementById('id_date_from');
   var dateTo = document.getElementById('id_date_to');
+  var presetGroup = document.querySelector('.lens-date-presets');
+  var presetButtons = presetGroup ? presetGroup.querySelectorAll('button') : [];
   if (!partial || !dateFrom || !dateTo) return;
+
+  function fmt(d) {
+    return d.toISOString().slice(0, 10);
+  }
+
   function enforcePartialMode() {
     dateFrom.disabled = partial.checked;
     dateTo.disabled = partial.checked;
+    presetButtons.forEach(function (b) { b.disabled = partial.checked; });
   }
   partial.addEventListener('change', enforcePartialMode);
   enforcePartialMode();
+
+  if (presetGroup) {
+    presetGroup.addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-preset]');
+      if (!btn) return;
+      if (btn.dataset.preset === 'clear') {
+        dateFrom.value = '';
+        dateTo.value = '';
+        return;
+      }
+      var days = parseInt(btn.dataset.preset, 10);
+      var to = new Date();
+      var from = new Date();
+      from.setDate(from.getDate() - days);
+      dateTo.value = fmt(to);
+      dateFrom.value = fmt(from);
+    });
+  }
 })();
 
 document.addEventListener('click', function (e) {
