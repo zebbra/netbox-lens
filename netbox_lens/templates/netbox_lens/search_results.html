@@ -30,6 +30,50 @@
     <i class="{{ backend.icon }}" aria-hidden="true"></i> {{ backend.label }}
   </h5>
 
+  {# Matched devices #}
+  {% if backend.devices %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">
+        <i class="mdi mdi-router-network" aria-hidden="true"></i>
+        {% trans "Devices" %}
+        <span class="badge text-bg-secondary ms-1">{{ backend.devices|length }}</span>
+      </h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-headings mb-0">
+        <thead>
+          <tr>
+            <th>{% trans "Name" %}</th>
+            <th>{% trans "IP" %}</th>
+            <th>{% trans "Location" %}</th>
+            <th>{% trans "Model" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in backend.devices %}
+          <tr>
+            <td>
+              <span class="d-inline-flex align-items-center gap-1">
+                <code class="lens-copy" data-value="{{ row.dns|default:row.name }}">{{ row.dns|default:row.name|default:"—" }}</code>
+                {% if row.nb_device_url %}
+                <a href="{{ row.nb_device_url }}" title="{% trans 'Open in NetBox' %}" class="text-muted">
+                  <i class="mdi mdi-open-in-new" style="font-size:.85em" aria-hidden="true"></i>
+                </a>
+                {% endif %}
+              </span>
+            </td>
+            <td><code class="lens-copy" data-value="{{ row.ip }}">{{ row.ip }}</code></td>
+            <td>{{ row.location|default:"—" }}</td>
+            <td>{{ row.model|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
   {# Port timeline #}
   {% if backend.sightings %}
   <div class="card mb-3">

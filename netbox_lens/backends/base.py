@@ -11,11 +11,12 @@ class SearchResult:
     sightings: list = field(default_factory=list)
     ips: list = field(default_factory=list)
     macs: list = field(default_factory=list)
+    devices: list = field(default_factory=list)
     error: str | None = None
 
     @property
     def has_results(self):
-        return bool(self.sightings or self.ips or self.macs)
+        return bool(self.sightings or self.ips or self.macs or self.devices)
 
     @property
     def sightings_json(self):

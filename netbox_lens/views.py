@@ -1,20 +1,28 @@
+import operator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
+from functools import reduce
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
+from netbox.views.generic import ObjectView
 from utilities.htmx import htmx_partial
+from utilities.views import ViewTab, register_model_view
 
 from .backends import get_backends
 from .forms import NodeSearchForm
+from .template_content import _device_nodes
 
 try:
     from dcim.models import Device as NbDevice
 except ImportError:
     NbDevice = None
+
+MAX_MACARP_ROWS = 500
 
 
 def _device_ip(device):
@@ -37,18 +45,29 @@ def _enrich_results(results):
             name = ip.get("router_name")
             if name:
                 names.add(name)
-    if not names:
-        return
-    url_map = {d.name: d.get_absolute_url() for d in NbDevice.objects.filter(name__in=names)}
-    for r in results or []:
-        for s in r.sightings or []:
-            name = (s.get("device") or {}).get("name") or s.get("switch")
-            if name and name in url_map:
-                s["nb_device_url"] = url_map[name]
-        for ip in r.ips or []:
-            name = ip.get("router_name")
-            if name and name in url_map:
-                ip["nb_device_url"] = url_map[name]
+    if names:
+        url_map = {d.name: d.get_absolute_url() for d in NbDevice.objects.filter(name__in=names)}
+        for r in results or []:
+            for s in r.sightings or []:
+                name = (s.get("device") or {}).get("name") or s.get("switch")
+                if name and name in url_map:
+                    s["nb_device_url"] = url_map[name]
+            for ip in r.ips or []:
+                name = ip.get("router_name")
+                if name and name in url_map:
+                    ip["nb_device_url"] = url_map[name]
+
+    ips = {d["ip"] for r in results or [] for d in (r.devices or []) if d.get("ip")}
+    if ips:
+        q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
+        ip_url_map = {
+            str(d.primary_ip4.address.ip): d.get_absolute_url()
+            for d in NbDevice.objects.filter(q).select_related("primary_ip4")
+        }
+        for r in results or []:
+            for d in r.devices or []:
+                if d.get("ip") in ip_url_map:
+                    d["nb_device_url"] = ip_url_map[d["ip"]]
 
 
 class LensStatusView(PermissionRequiredMixin, View):
@@ -143,3 +162,30 @@ class LensDiscoverView(PermissionRequiredMixin, View):
                 messages.error(request, message)
 
         return redirect(device.get_absolute_url())
+
+
+if NbDevice:
+    @register_model_view(NbDevice, name="lens_macarp", path="lens-mac-arp")
+    class DeviceMacArpView(ObjectView):
+        queryset = NbDevice.objects.all()
+        additional_permissions = ["netbox_lens.use_lens"]
+        template_name = "netbox_lens/device_macarp.html"
+        tab = ViewTab(
+            label="MAC",
+            permission="netbox_lens.use_lens",
+        )
+
+        def get_extra_context(self, request, instance):
+            ip = _device_ip(instance)
+            if not ip:
+                return {"lens_nodes": [], "lens_device_ip": None, "lens_total_nodes": 0, "lens_truncated": False}
+
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            backends = get_backends(config)
+            nodes = sorted(_device_nodes(backends, ip), key=lambda n: n.get("time_last") or "", reverse=True)
+            return {
+                "lens_nodes": nodes[:MAX_MACARP_ROWS],
+                "lens_device_ip": ip,
+                "lens_total_nodes": len(nodes),
+                "lens_truncated": len(nodes) > MAX_MACARP_ROWS,
+            }

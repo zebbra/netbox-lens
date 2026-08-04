@@ -1,0 +1,49 @@
+{% extends 'generic/object.html' %}
+{% load i18n %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    {% if lens_truncated %}
+    <div class="alert alert-warning">
+      {% trans "Showing" %} {{ lens_nodes|length }} {% trans "of" %} {{ lens_total_nodes }}
+      {% trans "nodes — refine your search or check Netdisco directly for the full list." %}
+    </div>
+    {% endif %}
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">
+          {% trans "MAC Table" %}
+          <span class="badge text-bg-secondary">{{ lens_total_nodes }}</span>
+        </h5>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover table-headings mb-0">
+          <thead>
+            <tr>
+              <th>{% trans "MAC" %}</th>
+              <th>{% trans "Port" %}</th>
+              <th>{% trans "VLAN" %}</th>
+              <th>{% trans "First Seen" %}</th>
+              <th>{% trans "Last Seen" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for node in lens_nodes %}
+            <tr>
+              <td><code>{{ node.mac }}</code></td>
+              <td><code>{{ node.port }}</code></td>
+              <td>{{ node.vlan|default:"—" }}</td>
+              <td>{{ node.time_first|slice:":16"|default:"—" }}</td>
+              <td>{{ node.time_last|slice:":16"|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted">{% trans "No active nodes on this device." %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -76,6 +76,26 @@ class NetdiscoBackend(LensBackend):
                         d2 = r2.json() if r2.content else {}
                         result.sightings.extend(d2.get("sightings") or [])
 
+            # Device name/hostname matching is a separate Netdisco entity from
+            # node/MAC sightings — query it too so switch/router hostnames
+            # (not just end-host MACs/IPs) are actually searchable.
+            try:
+                dresp = requests.get(
+                    f"{base_url}/api/v1/search/device",
+                    headers={
+                        "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                        "Accept": "application/json",
+                    },
+                    params={"q": query},
+                    timeout=self.config.get("timeout", 15),
+                    verify=self.config.get("verify_ssl", True),
+                )
+                if dresp.ok:
+                    ddata = dresp.json() if dresp.content else []
+                    result.devices = ddata if isinstance(ddata, list) else []
+            except Exception:
+                pass
+
         except requests.ConnectionError:
             result.error = "Could not reach Netdisco — check the configured URL."
         except requests.Timeout:
@@ -104,6 +124,7 @@ class NetdiscoBackend(LensBackend):
                     "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
                     "Accept": "application/json",
                 },
+                params={"active_only": "true"},
                 timeout=self.config.get("timeout", 15),
                 verify=self.config.get("verify_ssl", True),
             )
