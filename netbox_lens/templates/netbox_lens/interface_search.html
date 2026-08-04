@@ -17,6 +17,7 @@
           <th>{% trans "Speed" %}</th>
           <th>{% trans "Managed" %}</th>
           <th>{% trans "If admin." %}</th>
+          <th>{% trans "If oper." %}</th>
           <th>{% trans "Type" %}</th>
           <th>{% trans "PoE type" %}</th>
           <th>{% trans "Updated" %}</th>
@@ -30,6 +31,7 @@
           <th>{{ form.speed }}</th>
           <th>{{ form.managed }}</th>
           <th>{{ form.admin }}</th>
+          <th></th>
           <th></th>
           <th></th>
           <th></th>
@@ -51,6 +53,7 @@
             <td>{{ row.speed|default:"—" }}</td>
             <td>{{ row.managed|default:"—" }}</td>
             <td>{{ row.admin }}</td>
+            <td>{{ row.oper|default:"—" }}</td>
             <td>{{ row.type|default:"—" }}</td>
             <td>{{ row.poe_type|default:"—" }}</td>
             <td><span title="{{ row.updated|lens_absolute }}">{{ row.updated|lens_relative }}</span></td>
@@ -63,7 +66,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="11" class="text-muted">{% trans "No matching interfaces found." %}</td></tr>
+          <tr><td colspan="12" class="text-muted">{% trans "No matching interfaces found." %}</td></tr>
           {% endfor %}
         {% endif %}
       </tbody>
@@ -89,6 +92,24 @@
     {% trans "Showing" %} {{ rows|length }} {% trans "of" %} {{ total }}
     {% trans "rows — refine your search for the full list." %}
   </div>
+  {% endif %}
+  {% if rows %}
+  <form method="get" class="mt-2 d-flex align-items-center gap-2">
+    <input type="hidden" name="device" value="{{ form.cleaned_data.device|default:'' }}">
+    <input type="hidden" name="interface" value="{{ form.cleaned_data.interface|default:'' }}">
+    <input type="hidden" name="description" value="{{ form.cleaned_data.description|default:'' }}">
+    <input type="hidden" name="vlan" value="{{ form.cleaned_data.vlan|default:'' }}">
+    <input type="hidden" name="speed" value="{{ form.cleaned_data.speed|default:'' }}">
+    <input type="hidden" name="managed" value="{{ form.cleaned_data.managed|default:'' }}">
+    <input type="hidden" name="admin" value="{{ form.cleaned_data.admin|default:'' }}">
+    <input type="hidden" name="live" value="1">
+    <button type="submit" class="btn btn-outline-secondary btn-sm">
+      <i class="mdi mdi-refresh" aria-hidden="true"></i> {% trans "Refresh live status from Netdisco" %}
+    </button>
+    {% if live %}
+    <span class="text-muted small">{% trans "Admin/oper/VLAN refreshed live from Netdisco for the devices shown above." %}</span>
+    {% endif %}
+  </form>
   {% endif %}
 {% endif %}
 {% endblock %}

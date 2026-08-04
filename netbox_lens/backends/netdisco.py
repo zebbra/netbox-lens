@@ -330,6 +330,36 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
+    def device_ports(self, device_ip: str) -> list:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/object/device/{device_ip}/ports",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else []
+            if not isinstance(data, list):
+                return []
+            return [
+                {
+                    "port": p.get("port"),
+                    "up": p.get("up"),
+                    "up_admin": p.get("up_admin"),
+                    "vlan": p.get("vlan"),
+                }
+                for p in data
+            ]
+        except Exception:
+            return []
+
     def device_summary(self, device_ip: str) -> dict:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:

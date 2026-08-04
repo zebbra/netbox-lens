@@ -60,6 +60,9 @@ class LensBackend(ABC):
     def device_neighbors(self, device_ip: str) -> list:
         return []
 
+    def device_ports(self, device_ip: str) -> list:
+        return []
+
     def search_ports(self, query: str, partial: bool = True) -> list:
         return []
 

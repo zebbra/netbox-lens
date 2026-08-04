@@ -15,7 +15,7 @@ from utilities.views import ViewTab, register_model_view
 from .arp_history import build_arp_history
 from .backends import get_backends
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NodeSearchForm
-from .interface_search import build_interface_list
+from .interface_search import apply_live_status, build_interface_list
 from .mac_history import build_mac_history
 
 try:
@@ -297,12 +297,18 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
                 admin_query=form.cleaned_data.get("admin") or None,
                 grafana_template=config.get("grafana_interface_url"),
             )
+            live = request.GET.get("live") == "1"
+            if live:
+                backends = get_backends(config)
+                apply_live_status(rows, backends)
+
             context.update({
                 "rows": rows,
                 "total": total,
                 "truncated": truncated,
                 "scan_truncated": scan_truncated,
                 "searched": True,
+                "live": live,
             })
 
         return render(request, "netbox_lens/interface_search.html", context)

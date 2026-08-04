@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
 try:
@@ -69,7 +70,7 @@ def build_interface_list(
     if not NbInterface:
         return [], 0, False, False
 
-    qs = NbInterface.objects.select_related("device", "untagged_vlan")
+    qs = NbInterface.objects.select_related("device", "device__primary_ip4", "untagged_vlan")
     if device_query:
         qs = qs.filter(device__name__icontains=device_query)
     if interface_query:
@@ -98,6 +99,7 @@ def build_interface_list(
             continue
         rows.append({
             "device_name": iface.device.name,
+            "device_ip": str(iface.device.primary_ip4.address.ip) if iface.device.primary_ip4 else None,
             "nb_device_url": iface.device.get_absolute_url(),
             "interface_name": iface.name,
             "nb_interface_url": iface.get_absolute_url(),
@@ -106,6 +108,7 @@ def build_interface_list(
             "speed": speed,
             "managed": managed,
             "admin": "up" if iface.enabled else "down",
+            "oper": None,
             "type": iface.type,
             "poe_type": iface.poe_type,
             "updated": iface.last_updated.isoformat() if iface.last_updated else None,
@@ -115,3 +118,37 @@ def build_interface_list(
     total = len(rows)
     truncated = total > max_rows
     return rows[:max_rows], total, truncated, scan_truncated
+
+
+def apply_live_status(rows, backends):
+    """Overlay fresh admin/oper/vlan onto rows from Netdisco, one call per
+    distinct device among the (already-filtered) rows given."""
+    device_ips = {r["device_ip"] for r in rows if r.get("device_ip")}
+    if not device_ips or not backends:
+        return
+
+    ports_by_device = {}
+    with ThreadPoolExecutor() as executor:
+        futures = {}
+        for ip in device_ips:
+            for b in backends:
+                futures[executor.submit(b.device_ports, ip)] = ip
+        for future in as_completed(futures):
+            ip = futures[future]
+            result = future.result()
+            if result:
+                ports_by_device.setdefault(ip, {}).update({p["port"]: p for p in result if p.get("port")})
+
+    for row in rows:
+        port_map = ports_by_device.get(row.get("device_ip"))
+        if not port_map:
+            continue
+        live = port_map.get(row["interface_name"])
+        if not live:
+            continue
+        if live.get("up_admin"):
+            row["admin"] = live["up_admin"]
+        if live.get("up"):
+            row["oper"] = live["up"]
+        if live.get("vlan"):
+            row["vlan"] = live["vlan"]
