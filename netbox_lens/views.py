@@ -287,20 +287,25 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
 
         if form.is_valid():
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            live = request.GET.get("live") == "1"
+            vlan_query = form.cleaned_data.get("vlan") or None
             rows, total, truncated, scan_truncated = build_interface_list(
                 device_query=form.cleaned_data.get("device") or None,
                 interface_query=form.cleaned_data.get("interface") or None,
                 description_query=form.cleaned_data.get("description") or None,
-                vlan_query=form.cleaned_data.get("vlan") or None,
+                # Deferred to apply_live_status() below when live — NetBox rarely
+                # has VLAN set, so filtering on it now would zero out every row
+                # before the live refresh has a chance to populate real values.
+                vlan_query=None if live else vlan_query,
                 speed_query=form.cleaned_data.get("speed") or None,
                 managed_query=form.cleaned_data.get("managed") or None,
                 admin_query=form.cleaned_data.get("admin") or None,
                 grafana_template=config.get("grafana_interface_url"),
             )
-            live = request.GET.get("live") == "1"
             if live:
                 backends = get_backends(config)
-                apply_live_status(rows, backends)
+                rows = apply_live_status(rows, backends, vlan_query=vlan_query)
+                total = len(rows)
 
             context.update({
                 "rows": rows,

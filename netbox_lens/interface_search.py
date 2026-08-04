@@ -61,9 +61,11 @@ def build_interface_list(
     Filterable interface inventory sourced directly from NetBox's own synced
     Interface objects (no live Netdisco calls needed).
 
-    speed and managed are matched against their formatted/CF display values in
-    Python after the DB-level filters narrow the candidate set, since neither
-    is a simple indexed column comparison.
+    speed, managed and vlan are matched against their formatted/CF/NetBox
+    display values in Python after the DB-level filters narrow the candidate
+    set, rather than as DB filters — vlan in particular is rarely populated in
+    NetBox itself, so this same post-filter can be re-applied by the caller
+    once a live refresh has populated real VLAN numbers from Netdisco.
 
     Returns (rows, total_count, truncated, scan_truncated).
     """
@@ -77,8 +79,6 @@ def build_interface_list(
         qs = qs.filter(name__icontains=interface_query)
     if description_query:
         qs = qs.filter(description__icontains=description_query)
-    if vlan_query:
-        qs = qs.filter(untagged_vlan__vid=vlan_query)
     if admin_query == "up":
         qs = qs.filter(enabled=True)
     elif admin_query == "down":
@@ -97,6 +97,9 @@ def build_interface_list(
         speed = _format_speed(iface.speed)
         if speed_query and speed_query.lower() not in (speed or "").lower():
             continue
+        vlan = iface.untagged_vlan.vid if iface.untagged_vlan else None
+        if vlan_query and str(vlan) != str(vlan_query):
+            continue
         rows.append({
             "device_name": iface.device.name,
             "device_ip": str(iface.device.primary_ip4.address.ip) if iface.device.primary_ip4 else None,
@@ -104,7 +107,7 @@ def build_interface_list(
             "interface_name": iface.name,
             "nb_interface_url": iface.get_absolute_url(),
             "description": iface.description,
-            "vlan": iface.untagged_vlan.vid if iface.untagged_vlan else None,
+            "vlan": vlan,
             "speed": speed,
             "managed": managed,
             "admin": "up" if iface.enabled else "down",
@@ -120,12 +123,19 @@ def build_interface_list(
     return rows[:max_rows], total, truncated, scan_truncated
 
 
-def apply_live_status(rows, backends):
+def apply_live_status(rows, backends, vlan_query=None):
     """Overlay fresh admin/oper/vlan onto rows from Netdisco, one call per
-    distinct device among the (already-filtered) rows given."""
+    distinct device among the (already-filtered) rows given.
+
+    vlan_query re-applies the VLAN post-filter now that real values have
+    landed — NetBox rarely has VLAN set on its own, so the initial filter
+    in build_interface_list() may have had nothing to match against yet.
+
+    Returns the (possibly narrowed) rows list.
+    """
     device_ips = {r["device_ip"] for r in rows if r.get("device_ip")}
     if not device_ips or not backends:
-        return
+        return rows
 
     ports_by_device = {}
     with ThreadPoolExecutor() as executor:
@@ -152,3 +162,7 @@ def apply_live_status(rows, backends):
             row["oper"] = live["up"]
         if live.get("vlan"):
             row["vlan"] = live["vlan"]
+
+    if vlan_query:
+        rows = [r for r in rows if str(r.get("vlan")) == str(vlan_query)]
+    return rows
