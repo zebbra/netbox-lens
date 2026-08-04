@@ -8,6 +8,7 @@ urlpatterns = [
     path("search/", views.LensSearchView.as_view(), name="search"),
     path("mac-history/", views.LensMacHistoryView.as_view(), name="mac_history"),
     path("arp-history/", views.LensArpHistoryView.as_view(), name="arp_history"),
+    path("interfaces/", views.LensInterfaceSearchView.as_view(), name="interface_search"),
     path("status/", views.LensStatusView.as_view(), name="status"),
     path("discover/<int:pk>/", views.LensDiscoverView.as_view(), name="discover"),
 ]

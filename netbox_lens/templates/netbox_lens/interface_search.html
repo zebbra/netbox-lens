@@ -1,0 +1,94 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+{% load lens_filters %}
+
+{% block title %}{% trans "LENS – Default" %}{% endblock %}
+
+{% block content %}
+<form method="get">
+  <div class="table-responsive">
+    <table class="table table-hover table-headings mb-0">
+      <thead>
+        <tr>
+          <th>{% trans "Element name" %}</th>
+          <th>{% trans "Interface (ifDescr)" %}</th>
+          <th>{% trans "Description (ifAlias)" %}</th>
+          <th>{% trans "VLAN" %}</th>
+          <th>{% trans "Speed" %}</th>
+          <th>{% trans "Managed" %}</th>
+          <th>{% trans "If admin." %}</th>
+          <th>{% trans "Type" %}</th>
+          <th>{% trans "PoE type" %}</th>
+          <th>{% trans "Updated" %}</th>
+          <th></th>
+        </tr>
+        <tr>
+          <th>{{ form.device }}</th>
+          <th>{{ form.interface }}</th>
+          <th>{{ form.description }}</th>
+          <th>{{ form.vlan }}</th>
+          <th>{{ form.speed }}</th>
+          <th>{{ form.managed }}</th>
+          <th>{{ form.admin }}</th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="mdi mdi-magnify" aria-hidden="true"></i> {% trans "Search" %}
+            </button>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if searched %}
+          {% for row in rows %}
+          <tr>
+            <td><a href="{{ row.nb_device_url }}">{{ row.device_name }}</a></td>
+            <td><a href="{{ row.nb_interface_url }}">{{ row.interface_name }}</a></td>
+            <td>{{ row.description|default:"—" }}</td>
+            <td>{{ row.vlan|default:"—" }}</td>
+            <td>{{ row.speed|default:"—" }}</td>
+            <td>{{ row.managed|default:"—" }}</td>
+            <td>{{ row.admin }}</td>
+            <td>{{ row.type|default:"—" }}</td>
+            <td>{{ row.poe_type|default:"—" }}</td>
+            <td><span title="{{ row.updated|lens_absolute }}">{{ row.updated|lens_relative }}</span></td>
+            <td>
+              {% if row.grafana_url %}
+              <a href="{{ row.grafana_url }}" target="_blank" rel="noopener" title="{% trans 'Open in Grafana' %}">
+                <i class="mdi mdi-chart-line" aria-hidden="true"></i>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="11" class="text-muted">{% trans "No matching interfaces found." %}</td></tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% if form.non_field_errors %}
+  {% for error in form.non_field_errors %}
+  <div class="alert alert-warning mt-2 mb-0 py-2">
+    <i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}
+  </div>
+  {% endfor %}
+  {% endif %}
+</form>
+
+{% if searched %}
+  {% if scan_truncated %}
+  <div class="alert alert-warning mt-2">
+    {% trans "The initial scan hit its row cap before all filters were applied — narrow your search (e.g. by device or interface) for a complete result." %}
+  </div>
+  {% endif %}
+  {% if truncated %}
+  <div class="alert alert-warning mt-2">
+    {% trans "Showing" %} {{ rows|length }} {% trans "of" %} {{ total }}
+    {% trans "rows — refine your search for the full list." %}
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

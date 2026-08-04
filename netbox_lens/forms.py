@@ -174,3 +174,84 @@ class ArpHistoryForm(DateRangeMixin):
         if not any(cleaned.get(f) for f in ("mac", "client")):
             raise forms.ValidationError("Enter a MAC or client IP/hostname to search.")
         return cleaned
+
+
+ADMIN_CHOICES = [
+    ("", "Any"),
+    ("up", "Up"),
+    ("down", "Down"),
+]
+
+
+class InterfaceSearchForm(forms.Form):
+    device = forms.CharField(
+        label="Element name",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm",
+            "placeholder": "Device name (partial)",
+            "autocomplete": "off",
+        }),
+    )
+    interface = forms.CharField(
+        label="Interface (ifDescr)",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm",
+            "placeholder": "e.g. 1/0/10 (partial)",
+            "autocomplete": "off",
+        }),
+    )
+    description = forms.CharField(
+        label="Description (ifAlias)",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm",
+            "placeholder": "Description (partial)",
+            "autocomplete": "off",
+        }),
+    )
+    vlan = forms.CharField(
+        label="VLAN",
+        max_length=10,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm",
+            "placeholder": "e.g. 88",
+            "autocomplete": "off",
+        }),
+    )
+    speed = forms.CharField(
+        label="Speed",
+        max_length=32,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm",
+            "placeholder": "e.g. 1 Gbit",
+            "autocomplete": "off",
+        }),
+    )
+    managed = forms.CharField(
+        label="Managed",
+        max_length=64,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control form-control-sm",
+            "autocomplete": "off",
+        }),
+    )
+    admin = forms.ChoiceField(
+        label="If admin.",
+        choices=ADMIN_CHOICES,
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("vlan") and not cleaned["vlan"].isdigit():
+            raise forms.ValidationError("VLAN must be numeric.")
+        return cleaned

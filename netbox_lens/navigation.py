@@ -28,6 +28,11 @@ menu = PluginMenu(
                     link_text=_("ARP History"),
                     permissions=["netbox_lens.use_lens"],
                 ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:interface_search",
+                    link_text=_("Default"),
+                    permissions=["netbox_lens.use_lens"],
+                ),
             ),
         ),
         (

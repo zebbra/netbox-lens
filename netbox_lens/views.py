@@ -14,7 +14,8 @@ from utilities.views import ViewTab, register_model_view
 
 from .arp_history import build_arp_history
 from .backends import get_backends
-from .forms import ArpHistoryForm, MacHistoryForm, NodeSearchForm
+from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NodeSearchForm
+from .interface_search import build_interface_list
 from .mac_history import build_mac_history
 
 try:
@@ -275,6 +276,36 @@ class LensArpHistoryView(PermissionRequiredMixin, View):
                 })
 
         return render(request, "netbox_lens/arp_history.html", context)
+
+
+class LensInterfaceSearchView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        form = InterfaceSearchForm(request.GET or None)
+        context = {"form": form}
+
+        if form.is_valid():
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            rows, total, truncated, scan_truncated = build_interface_list(
+                device_query=form.cleaned_data.get("device") or None,
+                interface_query=form.cleaned_data.get("interface") or None,
+                description_query=form.cleaned_data.get("description") or None,
+                vlan_query=form.cleaned_data.get("vlan") or None,
+                speed_query=form.cleaned_data.get("speed") or None,
+                managed_query=form.cleaned_data.get("managed") or None,
+                admin_query=form.cleaned_data.get("admin") or None,
+                grafana_template=config.get("grafana_interface_url"),
+            )
+            context.update({
+                "rows": rows,
+                "total": total,
+                "truncated": truncated,
+                "scan_truncated": scan_truncated,
+                "searched": True,
+            })
+
+        return render(request, "netbox_lens/interface_search.html", context)
 
 
 if NbDevice:
