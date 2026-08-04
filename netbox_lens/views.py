@@ -1,6 +1,5 @@
 import operator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
 from functools import reduce
 
 from django.conf import settings
@@ -13,8 +12,9 @@ from netbox.views.generic import ObjectView
 from utilities.htmx import htmx_partial
 from utilities.views import ViewTab, register_model_view
 
+from .arp_history import build_arp_history
 from .backends import get_backends
-from .forms import MacHistoryForm, NodeSearchForm
+from .forms import ArpHistoryForm, MacHistoryForm, NodeSearchForm
 from .mac_history import build_mac_history
 
 try:
@@ -91,6 +91,26 @@ def _enrich_mac_history(rows):
             r["device_name"] = r.get("device_name") or d.name
 
 
+def _enrich_arp_history(rows):
+    """Attach nb_device_url and area (service_group) to arp-history rows by resolving
+    each distinct router IP to its NetBox Device."""
+    if not NbDevice:
+        return
+    ips = {r["router_ip"] for r in rows if r.get("router_ip")}
+    if not ips:
+        return
+    q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
+    device_map = {
+        str(d.primary_ip4.address.ip): d
+        for d in NbDevice.objects.filter(q).select_related("primary_ip4")
+    }
+    for r in rows:
+        d = device_map.get(r.get("router_ip"))
+        if d:
+            r["nb_device_url"] = d.get_absolute_url()
+            r["area"] = d.cf.get("service_group")
+
+
 class LensStatusView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.use_lens"
 
@@ -121,15 +141,14 @@ class LensSearchView(PermissionRequiredMixin, View):
         if form.is_valid():
             query = form.cleaned_data["q"]
             partial = form.cleaned_data.get("partial", False)
-            since_choice = form.cleaned_data.get("since") or "week"
-            _since_map = {
-                "now":    (None, False),
-                "week":   (date.today() - timedelta(days=7), True),
-                "2weeks": (date.today() - timedelta(days=14), True),
-                "month":  (date.today() - timedelta(days=30), True),
-            }
-            since_date, archived = _since_map.get(since_choice, _since_map["week"])
-            since = since_date.isoformat() if since_date else None
+            date_from = form.cleaned_data.get("date_from")
+            date_to = form.cleaned_data.get("date_to")
+            # Partial (wildcard) matches combined with a full archived-date-range
+            # search are expensive on Netdisco's side — restrict partial matches
+            # to the currently-active dataset regardless of the picked dates.
+            since = date_from.isoformat() if (date_from and not partial) else None
+            until = date_to.isoformat() if (date_to and not partial) else None
+            archived = bool(since)
 
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             backends = get_backends(config)
@@ -143,7 +162,7 @@ class LensSearchView(PermissionRequiredMixin, View):
                 results = [None] * len(backends)
                 with ThreadPoolExecutor() as executor:
                     futures = {
-                        executor.submit(b.search, query, partial, archived, since): i
+                        executor.submit(b.search, query, partial, archived, since, until): i
                         for i, b in enumerate(backends)
                     }
                     for future in as_completed(futures):
@@ -208,6 +227,8 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                     vlan_query=form.cleaned_data.get("vlan") or None,
                     mac_query=form.cleaned_data.get("mac") or None,
                     client_query=form.cleaned_data.get("client") or None,
+                    date_from=form.cleaned_data.get("date_from"),
+                    date_to=form.cleaned_data.get("date_to"),
                 )
                 _enrich_mac_history(rows)
                 context.update({
@@ -221,14 +242,49 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/mac_history.html", context)
 
 
+class LensArpHistoryView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        form = ArpHistoryForm(request.GET or None)
+        context = {"form": form}
+
+        if form.is_valid():
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            backends = get_backends(config)
+            if not backends:
+                context["config_error"] = (
+                    "No backends are configured. Add at least one backend to "
+                    "PLUGINS_CONFIG['netbox_lens']['backends']."
+                )
+            else:
+                rows, total, truncated = build_arp_history(
+                    backends,
+                    mac_query=form.cleaned_data.get("mac") or None,
+                    client_query=form.cleaned_data.get("client") or None,
+                    device_query=form.cleaned_data.get("device") or None,
+                    date_from=form.cleaned_data.get("date_from"),
+                    date_to=form.cleaned_data.get("date_to"),
+                )
+                _enrich_arp_history(rows)
+                context.update({
+                    "rows": rows,
+                    "total": total,
+                    "truncated": truncated,
+                    "searched": True,
+                })
+
+        return render(request, "netbox_lens/arp_history.html", context)
+
+
 if NbDevice:
-    @register_model_view(NbDevice, name="lens_nodes", path="lens-nodes")
+    @register_model_view(NbDevice, name="lens_macarp", path="lens-mac-arp")
     class DeviceMacArpView(ObjectView):
         queryset = NbDevice.objects.all()
         additional_permissions = ["netbox_lens.use_lens"]
         template_name = "netbox_lens/device_macarp.html"
         tab = ViewTab(
-            label="Nodes",
+            label="MAC",
             permission="netbox_lens.use_lens",
         )
 

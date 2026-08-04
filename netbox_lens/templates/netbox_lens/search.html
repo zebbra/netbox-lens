@@ -21,14 +21,11 @@
             </button>
           </div>
           <div class="d-flex align-items-center gap-3 flex-wrap">
-            <div class="btn-group btn-group-sm" role="group" aria-label="{% trans 'Date range' %}">
-              {% for value, label in form.since.field.choices %}
-              <input type="radio" class="btn-check" name="since" id="since_{{ value }}"
-                     value="{{ value }}" autocomplete="off"
-                     {% if form.since.value == value %}checked
-                     {% elif not form.is_bound and value == 'week' %}checked{% endif %}>
-              <label class="btn btn-outline-secondary" for="since_{{ value }}">{% trans label %}</label>
-              {% endfor %}
+            <div class="d-flex align-items-center gap-1">
+              <label class="form-label small text-muted mb-0" for="{{ form.date_from.id_for_label }}">{{ form.date_from.label }}</label>
+              {{ form.date_from }}
+              <label class="form-label small text-muted mb-0" for="{{ form.date_to.id_for_label }}">{{ form.date_to.label }}</label>
+              {{ form.date_to }}
             </div>
             <div class="vr"></div>
             <div class="form-check">
@@ -41,8 +38,13 @@
                   class="htmx-indicator spinner-border spinner-border-sm text-primary ms-auto"
                   role="status" aria-hidden="true"></span>
           </div>
-          {% if form.q.errors %}
+          {% if form.q.errors or form.non_field_errors %}
             {% for error in form.q.errors %}
+              <div class="alert alert-warning mt-2 mb-0 py-2">
+                <i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}
+              </div>
+            {% endfor %}
+            {% for error in form.non_field_errors %}
               <div class="alert alert-warning mt-2 mb-0 py-2">
                 <i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}
               </div>
@@ -66,17 +68,12 @@ code.lens-copy { cursor: pointer; border-radius: 3px; }
 <script>
 (function () {
   var partial = document.getElementById('id_partial');
-  if (!partial) return;
+  var dateFrom = document.getElementById('id_date_from');
+  var dateTo = document.getElementById('id_date_to');
+  if (!partial || !dateFrom || !dateTo) return;
   function enforcePartialMode() {
-    var radios = document.querySelectorAll('input[name="since"]');
-    if (partial.checked) {
-      radios.forEach(function (r) {
-        r.disabled = r.value !== 'now';
-        if (r.value === 'now') r.checked = true;
-      });
-    } else {
-      radios.forEach(function (r) { r.disabled = false; });
-    }
+    dateFrom.disabled = partial.checked;
+    dateTo.disabled = partial.checked;
   }
   partial.addEventListener('change', enforcePartialMode);
   enforcePartialMode();

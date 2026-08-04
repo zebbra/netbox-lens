@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 from .template_content import _device_nodes
 
@@ -58,17 +59,17 @@ def _device_targets(device_query):
     return targets, truncated
 
 
-def _fetch_nodes_for_targets(backends, targets):
+def _fetch_nodes_for_targets(backends, targets, since=None, until=None, require_active=True):
     nodes = []
     with ThreadPoolExecutor() as executor:
         futures = {
-            executor.submit(_device_nodes, backends, ip, port): (ip, name)
+            executor.submit(_device_nodes, backends, ip, port, since, until): (ip, name)
             for ip, name, port in targets
         }
         for future in as_completed(futures):
             ip, name = futures[future]
             for n in future.result():
-                if not n.get("active"):
+                if require_active and not n.get("active"):
                     continue
                 n = dict(n)
                 n["_device_ip"] = ip
@@ -77,10 +78,13 @@ def _fetch_nodes_for_targets(backends, targets):
     return nodes
 
 
-def _fetch_sightings(backends, query, partial=False):
+def _fetch_sightings(backends, query, partial=False, since=None, until=None, require_active=True):
     nodes = []
     for b in backends:
-        nodes.extend(n for n in b.node_sightings(query, partial=partial) if n.get("active"))
+        nodes.extend(
+            n for n in b.node_sightings(query, partial=partial, since=since, until=until)
+            if not require_active or n.get("active")
+        )
     return nodes
 
 
@@ -96,9 +100,32 @@ def _apply_post_filters(nodes, device_query=None, interface_query=None, vlan_que
     return nodes
 
 
+def _apply_date_filter(nodes, date_from=None, date_to=None):
+    """Safety net: bound results by time_last (or time_first as fallback) regardless
+    of whether the backend honored the daterange server-side."""
+    if not date_from and not date_to:
+        return nodes
+    filtered = []
+    for n in nodes:
+        stamp = n.get("time_last") or n.get("time_first")
+        if not stamp:
+            continue
+        try:
+            day = datetime.fromisoformat(stamp).date()
+        except ValueError:
+            continue
+        if date_from and day < date_from:
+            continue
+        if date_to and day > date_to:
+            continue
+        filtered.append(n)
+    return filtered
+
+
 def build_mac_history(
     backends, device_ip=None, device_query=None, interface_query=None,
     vlan_query=None, mac_query=None, client_query=None, max_rows=MAX_ROWS,
+    date_from=None, date_to=None,
 ):
     """
     Correlate port/MAC sightings with ARP-resolved client IP/DNS.
@@ -109,14 +136,25 @@ def build_mac_history(
     (optionally narrowed by device_query); failing that, device_query alone resolves via
     NetBox's own device list.
 
+    date_from/date_to (date objects) bound results by last-seen date. When given, the
+    active-only requirement is relaxed so archived/historical nodes are considered too,
+    then _apply_date_filter narrows to the requested window client-side.
+
     Returns (rows, total_count, truncated, port_match_truncated).
     """
     port_match_truncated = False
+    since = date_from.isoformat() if date_from else None
+    until = date_to.isoformat() if date_to else None
+    require_active = not (date_from or date_to)
 
     if device_ip:
-        nodes = _fetch_nodes_for_targets(backends, [(device_ip, None, None)])
+        nodes = _fetch_nodes_for_targets(
+            backends, [(device_ip, None, None)], since=since, until=until, require_active=require_active,
+        )
     elif mac_query:
-        nodes = _fetch_sightings(backends, mac_query, partial=False)
+        nodes = _fetch_sightings(
+            backends, mac_query, partial=False, since=since, until=until, require_active=require_active,
+        )
         nodes = _apply_post_filters(nodes, device_query, interface_query, vlan_query)
     elif client_query:
         # Node search only populates "sightings" (port-level) for MAC-shaped
@@ -127,19 +165,29 @@ def build_mac_history(
             macs_found.update(b.find_macs(client_query, partial=True))
         nodes = []
         for mac in macs_found:
-            nodes.extend(_fetch_sightings(backends, mac, partial=False))
+            nodes.extend(_fetch_sightings(
+                backends, mac, partial=False, since=since, until=until, require_active=require_active,
+            ))
         nodes = _apply_post_filters(nodes, device_query, interface_query, vlan_query)
     elif interface_query or vlan_query:
         targets, port_match_truncated = _port_targets(backends, device_query, interface_query, vlan_query)
-        nodes = _fetch_nodes_for_targets(backends, targets) if targets else []
+        nodes = (
+            _fetch_nodes_for_targets(backends, targets, since=since, until=until, require_active=require_active)
+            if targets else []
+        )
         # A matched port (e.g. a trunk) can carry more VLANs than the one searched —
         # the port-level match doesn't guarantee every node on it matches too.
         nodes = _apply_post_filters(nodes, vlan_query=vlan_query)
     elif device_query:
         targets, _ = _device_targets(device_query)
-        nodes = _fetch_nodes_for_targets(backends, targets) if targets else []
+        nodes = (
+            _fetch_nodes_for_targets(backends, targets, since=since, until=until, require_active=require_active)
+            if targets else []
+        )
     else:
         return [], 0, False, False
+
+    nodes = _apply_date_filter(nodes, date_from, date_to)
 
     macs = {n["mac"] for n in nodes if n.get("mac")}
     client_map = {}

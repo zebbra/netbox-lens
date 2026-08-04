@@ -14,10 +14,10 @@ except ImportError:
     NbDevice = None
 
 
-def _device_nodes(backends, device_ip, port=None):
+def _device_nodes(backends, device_ip, port=None, since=None, until=None):
     nodes = []
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(b.device_nodes, device_ip) for b in backends]
+        futures = [executor.submit(b.device_nodes, device_ip, since, until) for b in backends]
         for future in as_completed(futures):
             result = future.result()
             if port:

@@ -45,10 +45,13 @@ class LensBackend(ABC):
         self.config = config
 
     @abstractmethod
-    def search(self, query: str, partial: bool = False, archived: bool = False, since: str | None = None) -> SearchResult:
+    def search(
+        self, query: str, partial: bool = False, archived: bool = False,
+        since: str | None = None, until: str | None = None,
+    ) -> SearchResult:
         ...
 
-    def device_nodes(self, device_ip: str) -> list:
+    def device_nodes(self, device_ip: str, since: str | None = None, until: str | None = None) -> list:
         return []
 
     def device_summary(self, device_ip: str) -> dict:
@@ -60,10 +63,19 @@ class LensBackend(ABC):
     def search_ports(self, query: str, partial: bool = True) -> list:
         return []
 
-    def node_sightings(self, query: str, partial: bool = False) -> list:
+    def node_sightings(
+        self, query: str, partial: bool = False,
+        since: str | None = None, until: str | None = None,
+    ) -> list:
         return []
 
     def find_macs(self, query: str, partial: bool = True) -> list:
+        return []
+
+    def arp_entries(
+        self, query: str, partial: bool = False,
+        since: str | None = None, until: str | None = None,
+    ) -> list:
         return []
 
     def resolve_mac(self, mac: str) -> dict | None:

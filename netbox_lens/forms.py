@@ -1,4 +1,5 @@
 import re
+from datetime import date, timedelta
 
 from django import forms
 
@@ -11,14 +12,34 @@ IP_RE = re.compile(
     r'|^[0-9a-fA-F:]+(/\d+)?$'                  # IPv6
 )
 
-SINCE_CHOICES = [
-    ("now",    "Now"),
-    ("week",   "7 days"),
-    ("2weeks", "2 weeks"),
-    ("month",  "1 month"),
-]
 
-class NodeSearchForm(forms.Form):
+def _week_ago():
+    return date.today() - timedelta(days=7)
+
+
+class DateRangeMixin(forms.Form):
+    date_from = forms.DateField(
+        label="From",
+        required=False,
+        initial=_week_ago,
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
+    )
+    date_to = forms.DateField(
+        label="To",
+        required=False,
+        initial=date.today,
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "form-control"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        date_from, date_to = cleaned.get("date_from"), cleaned.get("date_to")
+        if date_from and date_to and date_from > date_to:
+            raise forms.ValidationError('"From" date must not be after "To" date.')
+        return cleaned
+
+
+class NodeSearchForm(DateRangeMixin):
     q = forms.CharField(
         label="Search",
         max_length=255,
@@ -29,11 +50,6 @@ class NodeSearchForm(forms.Form):
             "autocomplete": "off",
             "spellcheck": "false",
         }),
-    )
-    since = forms.ChoiceField(
-        choices=SINCE_CHOICES,
-        required=False,
-        initial="week",
     )
     partial = forms.BooleanField(
         required=False,
@@ -60,7 +76,7 @@ class NodeSearchForm(forms.Form):
         return q
 
 
-class MacHistoryForm(forms.Form):
+class MacHistoryForm(DateRangeMixin):
     device = forms.CharField(
         label="Device",
         max_length=255,
@@ -118,4 +134,43 @@ class MacHistoryForm(forms.Form):
             raise forms.ValidationError("Enter at least one filter to search.")
         if cleaned.get("vlan") and not cleaned["vlan"].isdigit():
             raise forms.ValidationError("VLAN must be numeric.")
+        return cleaned
+
+
+class ArpHistoryForm(DateRangeMixin):
+    mac = forms.CharField(
+        label="MAC",
+        max_length=64,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "aa:bb:cc:dd:ee:ff",
+            "autocomplete": "off",
+        }),
+    )
+    client = forms.CharField(
+        label="Client",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Client IP or hostname",
+            "autocomplete": "off",
+        }),
+    )
+    device = forms.CharField(
+        label="Router",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Router name (partial)",
+            "autocomplete": "off",
+        }),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if not any(cleaned.get(f) for f in ("mac", "client")):
+            raise forms.ValidationError("Enter a MAC or client IP/hostname to search.")
         return cleaned

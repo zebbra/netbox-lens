@@ -1,0 +1,77 @@
+{% load i18n %}
+{% load lens_filters %}
+
+{% if truncated %}
+<div class="alert alert-warning">
+  {% trans "Showing" %} {{ rows|length }} {% trans "of" %} {{ total }}
+  {% trans "rows — refine your search for the full list." %}
+</div>
+{% endif %}
+<div class="table-responsive">
+  <table class="table table-hover table-headings mb-0">
+    <thead>
+      <tr>
+        <th>{% trans "Router" %}</th>
+        <th>{% trans "MAC" %}</th>
+        <th>{% trans "Client IP" %}</th>
+        <th>{% trans "Client Name" %}</th>
+        <th>{% trans "Vendor" %}</th>
+        <th>{% trans "Area" %}</th>
+        <th>{% trans "First Seen" %}</th>
+        <th>{% trans "Last Seen" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          {% if row.nb_device_url %}
+          <a href="{{ row.nb_device_url }}">{{ row.router_name|default:row.router_ip }}</a>
+          {% else %}
+          {{ row.router_name|default:row.router_ip|default:"—" }}
+          {% endif %}
+        </td>
+        <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac|default:"—" }}</code></td>
+        <td>
+          {% if row.client_ip %}<code class="lens-copy" data-value="{{ row.client_ip }}">{{ row.client_ip }}</code>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ row.client_name|default:"—" }}</td>
+        <td>{{ row.vendor|default:"—" }}</td>
+        <td>{{ row.area|default:"—" }}</td>
+        <td><span title="{{ row.time_first|lens_absolute }}">{{ row.time_first|lens_relative }}</span></td>
+        <td><span title="{{ row.time_last|lens_absolute }}">{{ row.time_last|lens_relative }}</span></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="text-muted">{% trans "No matching entries found." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<style>code.lens-copy { cursor: pointer; border-radius: 3px; }</style>
+<script>
+(function () {
+  if (window._lenscopying) return;
+  window._lenscopying = true;
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('code.lens-copy');
+    if (!el) return;
+    var val = el.dataset.value || el.textContent.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).catch(function () {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = val; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    el.style.outline = '2px solid #2bd9a8';
+    el.style.transition = 'outline-color .4s';
+    setTimeout(function () {
+      el.style.outlineColor = 'transparent';
+      setTimeout(function () { el.style.outline = ''; el.style.transition = ''; }, 450);
+    }, 600);
+  });
+}());
+</script>

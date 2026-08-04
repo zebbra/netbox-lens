@@ -11,7 +11,10 @@ class NetdiscoBackend(LensBackend):
     label = "Netdisco"
     icon = "mdi mdi-network"
 
-    def search(self, query: str, partial: bool = False, archived: bool = False, since: str | None = None) -> SearchResult:
+    def search(
+        self, query: str, partial: bool = False, archived: bool = False,
+        since: str | None = None, until: str | None = None,
+    ) -> SearchResult:
         result = SearchResult(backend=self.name, label=self.label, icon=self.icon)
 
         base_url = self.config.get("url", "").rstrip("/")
@@ -27,7 +30,7 @@ class NetdiscoBackend(LensBackend):
             "archived": "true" if archived else "false",
         }
         if since:
-            params["daterange"] = f"{since} - {date.today().isoformat()}"
+            params["daterange"] = f"{since} - {until or date.today().isoformat()}"
 
         try:
             resp = requests.get(
@@ -64,7 +67,7 @@ class NetdiscoBackend(LensBackend):
                 for mac in seen_macs:
                     follow_params = {"q": mac, "archived": "true" if archived else "false", "deviceports": "false"}
                     if since:
-                        follow_params["daterange"] = f"{since} - {date.today().isoformat()}"
+                        follow_params["daterange"] = f"{since} - {until or date.today().isoformat()}"
                     r2 = requests.get(
                         f"{base_url}/api/v1/search/node",
                         headers=headers,
@@ -113,10 +116,13 @@ class NetdiscoBackend(LensBackend):
 
         return result
 
-    def device_nodes(self, device_ip: str) -> list:
+    def device_nodes(self, device_ip: str, since: str | None = None, until: str | None = None) -> list:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return []
+        params = {"active_only": "false" if since else "true"}
+        if since:
+            params["daterange"] = f"{since} - {until or date.today().isoformat()}"
         try:
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/nodes",
@@ -124,7 +130,7 @@ class NetdiscoBackend(LensBackend):
                     "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
                     "Accept": "application/json",
                 },
-                params={"active_only": "true"},
+                params=params,
                 timeout=self.config.get("timeout", 15),
                 verify=self.config.get("verify_ssl", True),
             )
@@ -155,10 +161,16 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
-    def node_sightings(self, query: str, partial: bool = False) -> list:
+    def node_sightings(
+        self, query: str, partial: bool = False,
+        since: str | None = None, until: str | None = None,
+    ) -> list:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return []
+        params = {"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"}
+        if since:
+            params["daterange"] = f"{since} - {until or date.today().isoformat()}"
         try:
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
@@ -166,7 +178,7 @@ class NetdiscoBackend(LensBackend):
                     "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
                     "Accept": "application/json",
                 },
-                params={"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"},
+                params=params,
                 timeout=self.config.get("timeout", 15),
                 verify=self.config.get("verify_ssl", True),
             )
@@ -212,6 +224,51 @@ class NetdiscoBackend(LensBackend):
             macs = {m.get("mac") for m in (data.get("macs") or []) if m.get("mac")}
             macs |= {m.get("mac") for m in (data.get("ips") or []) if m.get("mac")}
             return list(macs)
+        except Exception:
+            return []
+
+    def arp_entries(
+        self, query: str, partial: bool = False,
+        since: str | None = None, until: str | None = None,
+    ) -> list:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        params = {"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"}
+        if since:
+            params["daterange"] = f"{since} - {until or date.today().isoformat()}"
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/search/node",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                params=params,
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict):
+                return []
+            # Netdisco puts ARP-level results under "ips" for a MAC query but under
+            # "macs" for an IP/hostname query — read both, like find_macs() does.
+            raw = (data.get("ips") or []) + (data.get("macs") or [])
+            return [
+                {
+                    "mac": e.get("mac"),
+                    "ip": e.get("ip"),
+                    "dns": e.get("dns"),
+                    "router_ip": e.get("router_ip"),
+                    "router_name": e.get("router_name") or e.get("router_ip"),
+                    "vendor": (e.get("manufacturer") or {}).get("company"),
+                    "active": e.get("active"),
+                    "time_first": e.get("time_first"),
+                    "time_last": e.get("time_last"),
+                }
+                for e in raw
+            ]
         except Exception:
             return []
 
