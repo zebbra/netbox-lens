@@ -10,12 +10,27 @@ menu = PluginMenu(
             (
                 PluginMenuItem(
                     link="plugins:netbox_lens:search",
-                    link_text=_("Endpoint Lookup"),
+                    link_text=_("Endpoint"),
                     permissions=["netbox_lens.use_lens"],
                 ),
+            ),
+        ),
+        (
+            _("Legacy"),
+            (
+                PluginMenuItem(
+                    link="plugins:netbox_lens:mac_history",
+                    link_text=_("Node History"),
+                    permissions=["netbox_lens.use_lens"],
+                ),
+            ),
+        ),
+        (
+            _("Status"),
+            (
                 PluginMenuItem(
                     link="plugins:netbox_lens:status",
-                    link_text=_("Backend Status"),
+                    link_text=_("Backend"),
                     permissions=["netbox_lens.use_lens"],
                 ),
             ),

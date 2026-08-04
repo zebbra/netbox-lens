@@ -14,8 +14,8 @@ from utilities.htmx import htmx_partial
 from utilities.views import ViewTab, register_model_view
 
 from .backends import get_backends
-from .forms import NodeSearchForm
-from .template_content import _device_nodes
+from .forms import MacHistoryForm, NodeSearchForm
+from .mac_history import build_mac_history
 
 try:
     from dcim.models import Device as NbDevice
@@ -68,6 +68,27 @@ def _enrich_results(results):
             for d in r.devices or []:
                 if d.get("ip") in ip_url_map:
                     d["nb_device_url"] = ip_url_map[d["ip"]]
+
+
+def _enrich_mac_history(rows):
+    """Attach nb_device_url and area (service_group) to mac-history rows by resolving
+    each distinct device IP to its NetBox Device."""
+    if not NbDevice:
+        return
+    ips = {r["device_ip"] for r in rows if r.get("device_ip")}
+    if not ips:
+        return
+    q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
+    device_map = {
+        str(d.primary_ip4.address.ip): d
+        for d in NbDevice.objects.filter(q).select_related("primary_ip4")
+    }
+    for r in rows:
+        d = device_map.get(r.get("device_ip"))
+        if d:
+            r["nb_device_url"] = d.get_absolute_url()
+            r["area"] = d.cf.get("service_group")
+            r["device_name"] = r.get("device_name") or d.name
 
 
 class LensStatusView(PermissionRequiredMixin, View):
@@ -164,28 +185,67 @@ class LensDiscoverView(PermissionRequiredMixin, View):
         return redirect(device.get_absolute_url())
 
 
+class LensMacHistoryView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        form = MacHistoryForm(request.GET or None)
+        context = {"form": form}
+
+        if form.is_valid():
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            backends = get_backends(config)
+            if not backends:
+                context["config_error"] = (
+                    "No backends are configured. Add at least one backend to "
+                    "PLUGINS_CONFIG['netbox_lens']['backends']."
+                )
+            else:
+                rows, total, truncated, port_truncated = build_mac_history(
+                    backends,
+                    device_query=form.cleaned_data.get("device") or None,
+                    interface_query=form.cleaned_data.get("interface") or None,
+                    vlan_query=form.cleaned_data.get("vlan") or None,
+                    mac_query=form.cleaned_data.get("mac") or None,
+                    client_query=form.cleaned_data.get("client") or None,
+                )
+                _enrich_mac_history(rows)
+                context.update({
+                    "rows": rows,
+                    "total": total,
+                    "truncated": truncated,
+                    "port_truncated": port_truncated,
+                    "searched": True,
+                })
+
+        return render(request, "netbox_lens/mac_history.html", context)
+
+
 if NbDevice:
-    @register_model_view(NbDevice, name="lens_macarp", path="lens-mac-arp")
+    @register_model_view(NbDevice, name="lens_nodes", path="lens-nodes")
     class DeviceMacArpView(ObjectView):
         queryset = NbDevice.objects.all()
         additional_permissions = ["netbox_lens.use_lens"]
         template_name = "netbox_lens/device_macarp.html"
         tab = ViewTab(
-            label="MAC",
+            label="Nodes",
             permission="netbox_lens.use_lens",
         )
 
         def get_extra_context(self, request, instance):
             ip = _device_ip(instance)
             if not ip:
-                return {"lens_nodes": [], "lens_device_ip": None, "lens_total_nodes": 0, "lens_truncated": False}
+                return {"rows": [], "lens_device_ip": None, "total": 0, "truncated": False}
 
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             backends = get_backends(config)
-            nodes = sorted(_device_nodes(backends, ip), key=lambda n: n.get("time_last") or "", reverse=True)
+            rows, total, truncated, _ = build_mac_history(backends, device_ip=ip, max_rows=MAX_MACARP_ROWS)
+            for r in rows:
+                r["device_name"] = instance.name
+                r["area"] = instance.cf.get("service_group")
             return {
-                "lens_nodes": nodes[:MAX_MACARP_ROWS],
+                "rows": rows,
                 "lens_device_ip": ip,
-                "lens_total_nodes": len(nodes),
-                "lens_truncated": len(nodes) > MAX_MACARP_ROWS,
+                "total": total,
+                "truncated": truncated,
             }

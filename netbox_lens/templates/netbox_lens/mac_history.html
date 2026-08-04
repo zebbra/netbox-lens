@@ -1,0 +1,62 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "LENS – Node History" %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mb-4">
+  <div class="col-md-10 col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <form method="get">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label small text-muted">{{ form.device.label }}</label>
+              {{ form.device }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small text-muted">{{ form.interface.label }}</label>
+              {{ form.interface }}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small text-muted">{{ form.vlan.label }}</label>
+              {{ form.vlan }}
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small text-muted">{{ form.mac.label }}</label>
+              {{ form.mac }}
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-9">
+              <label class="form-label small text-muted">{{ form.client.label }}</label>
+              {{ form.client }}
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+              <button type="submit" class="btn btn-primary w-100">
+                <i class="mdi mdi-magnify" aria-hidden="true"></i> {% trans "Search" %}
+              </button>
+            </div>
+          </div>
+          {% if form.non_field_errors %}
+          {% for error in form.non_field_errors %}
+          <div class="alert alert-warning mt-2 mb-0 py-2">
+            <i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}
+          </div>
+          {% endfor %}
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if config_error %}
+<div class="alert alert-danger">
+  <i class="mdi mdi-cog-off" aria-hidden="true"></i>
+  <strong>{% trans "Configuration error" %}:</strong> {{ config_error }}
+</div>
+{% elif searched %}
+{% include 'netbox_lens/mac_history_table.html' %}
+{% endif %}
+{% endblock %}

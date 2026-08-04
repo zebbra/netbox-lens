@@ -58,3 +58,64 @@ class NodeSearchForm(forms.Form):
                     "Expected format: aa:bb:cc:dd:ee:ff"
                 )
         return q
+
+
+class MacHistoryForm(forms.Form):
+    device = forms.CharField(
+        label="Device",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Device name (partial)",
+            "autocomplete": "off",
+        }),
+    )
+    interface = forms.CharField(
+        label="Interface",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "e.g. GigabitEthernet1/0/10 (partial)",
+            "autocomplete": "off",
+        }),
+    )
+    vlan = forms.CharField(
+        label="VLAN",
+        max_length=10,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "e.g. 88",
+            "autocomplete": "off",
+        }),
+    )
+    mac = forms.CharField(
+        label="MAC",
+        max_length=64,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "aa:bb:cc:dd:ee:ff",
+            "autocomplete": "off",
+        }),
+    )
+    client = forms.CharField(
+        label="Client",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Client IP or hostname",
+            "autocomplete": "off",
+        }),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if not any(cleaned.get(f) for f in ("device", "interface", "vlan", "mac", "client")):
+            raise forms.ValidationError("Enter at least one filter to search.")
+        if cleaned.get("vlan") and not cleaned["vlan"].isdigit():
+            raise forms.ValidationError("VLAN must be numeric.")
+        return cleaned

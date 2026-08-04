@@ -57,6 +57,18 @@ class LensBackend(ABC):
     def device_neighbors(self, device_ip: str) -> list:
         return []
 
+    def search_ports(self, query: str, partial: bool = True) -> list:
+        return []
+
+    def node_sightings(self, query: str, partial: bool = False) -> list:
+        return []
+
+    def find_macs(self, query: str, partial: bool = True) -> list:
+        return []
+
+    def resolve_mac(self, mac: str) -> dict | None:
+        return None
+
     def device_web_url(self, device_ip: str) -> str | None:
         return None
 

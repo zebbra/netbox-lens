@@ -134,6 +134,113 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
+    def search_ports(self, query: str, partial: bool = True) -> list:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/search/port",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                params={"q": query, "partial": "true" if partial else "false", "descr": "true"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else []
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def node_sightings(self, query: str, partial: bool = False) -> list:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/search/node",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                params={"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict):
+                return []
+            return [
+                {
+                    "mac": s.get("mac"),
+                    "port": s.get("port"),
+                    "vlan": s.get("vlan"),
+                    "active": s.get("active"),
+                    "time_first": s.get("time_first"),
+                    "time_last": s.get("time_last"),
+                    "_device_ip": s.get("switch"),
+                    "_device_name": (s.get("device") or {}).get("name"),
+                }
+                for s in (data.get("sightings") or [])
+            ]
+        except Exception:
+            return []
+
+    def find_macs(self, query: str, partial: bool = True) -> list:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/search/node",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                params={"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict):
+                return []
+            macs = {m.get("mac") for m in (data.get("macs") or []) if m.get("mac")}
+            macs |= {m.get("mac") for m in (data.get("ips") or []) if m.get("mac")}
+            return list(macs)
+        except Exception:
+            return []
+
+    def resolve_mac(self, mac: str) -> dict | None:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return None
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/search/node",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                params={"q": mac, "partial": "false", "deviceports": "false", "show_vendor": "false", "archived": "true"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict):
+                return None
+            entry = (data.get("macs") or data.get("ips") or [None])[0]
+            if not entry:
+                return None
+            return {"ip": entry.get("ip"), "dns": entry.get("dns")}
+        except Exception:
+            return None
+
     def device_neighbors(self, device_ip: str) -> list:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
