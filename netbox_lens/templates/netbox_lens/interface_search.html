@@ -30,7 +30,14 @@
           <th></th>
           <th>{{ form.speed }}</th>
           <th>{{ form.managed }}</th>
-          <th>{{ form.admin }}</th>
+          <th>
+            {% if locked_admin %}
+            <input type="hidden" name="admin" value="{{ locked_admin }}">
+            <span class="badge text-bg-secondary text-capitalize">{{ locked_admin }}</span>
+            {% else %}
+            {{ form.admin }}
+            {% endif %}
+          </th>
           <th></th>
           <th></th>
           <th></th>

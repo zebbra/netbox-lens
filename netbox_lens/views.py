@@ -288,7 +288,11 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
         for key, value in self.default_filters.items():
             data.setdefault(key, value)
         form = InterfaceSearchForm(data or None)
-        context = {"form": form, "page_title": self.page_title}
+        context = {
+            "form": form,
+            "page_title": self.page_title,
+            "locked_admin": self.default_filters.get("admin"),
+        }
 
         if form.is_valid():
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
