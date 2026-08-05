@@ -1,0 +1,26 @@
+sync:
+  vip_mode: soft
+  housekeeping: true
+  no_ip: true
+
+auto_create:
+  role: switch
+  site: home
+  status: active
+  location: true
+
+cabling:
+  scope: site
+  source_cf: source
+  source_value: netdisco
+
+custom_fields:
+  source: source
+  source_value: netdisco
+  os_version: ~ #os_version
+  os_name: ~ #os_name
+  os_release: ~ # os_release
+  neighbor_text: ~ #neighbor
+  neighbor_port: ~ #neighbor_port
+  neighbor_device: ~ #neighbor_device
+  neighbor_iface: ~ #neighbor_iface

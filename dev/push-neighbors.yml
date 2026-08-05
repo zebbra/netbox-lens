@@ -1,0 +1,95 @@
+---
+# Collect ARP/NDP neighbors from a Linux router and push them into Netdisco
+# using its offline arpnip/macsuck API — no SNMP required.
+#
+# Device metadata and port info are read from the Ansible facts cache.
+#
+# Usage:
+#   ansible-playbook push-neighbors.yml -i inventory.yml
+#
+# Required inventory group: router, eve
+#
+# Required playbook vars (set in group_vars or extra-vars):
+#   facts_cache_dir: /home/sgr/ansible/.facts_cache
+#
+# Optional env vars on eve:
+#   NETDISCO_URL    default: http://localhost:5001
+#   NETDISCO_TOKEN  bearer token
+
+- name: Collect ARP/NDP neighbors from router
+  hosts: router
+  gather_facts: false
+  tasks:
+    - name: Dump hostvars for inspection
+      ansible.builtin.copy:
+        content: "{{ hostvars[inventory_hostname] | to_nice_json }}"
+        dest: "/tmp/hostvars_{{ inventory_hostname }}.json"
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Get IPv4 ARP table
+      ansible.builtin.command: ip -j neigh show
+      register: ipv4_raw
+      changed_when: false
+
+    - name: Get IPv6 NDP table
+      ansible.builtin.command: ip -6 -j neigh show
+      register: ipv6_raw
+      changed_when: false
+
+    - name: Combine neighbors
+      ansible.builtin.set_fact:
+        neighbors: "{{ (ipv4_raw.stdout | from_json) + (ipv6_raw.stdout | from_json) }}"
+
+- name: Push neighbors into Netdisco
+  hosts: eve
+  gather_facts: false
+  vars:
+    _rhost:        "{{ groups['router'][0] }}"
+    _router:       "{{ hostvars[_rhost] }}"
+    router_ip:     "{{ _router['ansible_host'] }}"
+    facts_cache:   "{{ facts_cache_dir | default('/home/sgr/ansible/.facts_cache') }}/{{ _rhost }}"
+    neighbors:     "{{ _router['neighbors'] }}"
+    neighbor_file: /tmp/nd-neighbors.json
+    # node_exporter_textfile_dir: /var/lib/node_exporter/textfile_collector
+  tasks:
+    - name: Show resolved router vars
+      ansible.builtin.debug:
+        msg:
+          router_host:  "{{ _rhost }}"
+          router_ip:    "{{ router_ip }}"
+          facts_cache:  "{{ facts_cache }}"
+
+    - name: Write neighbor JSON to temp file
+      ansible.builtin.copy:
+        content: "{{ neighbors | to_json }}"
+        dest: "{{ neighbor_file }}"
+        mode: "0600"
+
+    - name: Push neighbors to Netdisco
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/push-neighbors.py"
+          - --neighbors
+          - "{{ neighbor_file }}"
+          - --router-ip
+          - "{{ router_ip }}"
+          - --facts-cache
+          - "{{ facts_cache }}"
+          - --textfile-dir
+          - "{{ node_exporter_textfile_dir | default('') }}"
+      environment:
+        NETDISCO_URL:   "{{ lookup('env', 'NETDISCO_URL')   | default('http://localhost:5001', true) }}"
+        NETDISCO_TOKEN: "{{ lookup('env', 'NETDISCO_TOKEN') | default('', true) }}"
+      register: push_result
+      changed_when: "'queued' in push_result.stdout"
+
+    - name: Show result
+      ansible.builtin.debug:
+        msg: "{{ push_result.stdout_lines }}"
+
+    - name: Clean up temp file
+      ansible.builtin.file:
+        path: "{{ neighbor_file }}"
+        state: absent

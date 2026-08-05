@@ -4,9 +4,9 @@ x-netdisco-env: &netdisco-env
   NETDISCO_CURRENT_PG_VERSION: "18"
 
 x-netdisco-volumes: &netdisco-volumes
-  - /home/sgr/code/netdisco-docker/netdisco/config:/home/netdisco/environments
-  - /home/sgr/code/netdisco-docker/netdisco/nd-site-local:/home/netdisco/nd-site-local
-  - /home/sgr/code/netdisco-docker/netdisco/logs:/home/netdisco/logs
+  - ./netdisco/config:/home/netdisco/environments
+  - ./netdisco/nd-site-local:/home/netdisco/nd-site-local
+  - netdisco-logs:/home/netdisco/logs
 
 x-dns-opt: &dns-opt
   - "ndots:0"
@@ -25,7 +25,7 @@ services:
     container_name: lens-netdisco-postgresql
     shm_size: 128mb
     volumes:
-      - /home/sgr/code/netdisco-docker/netdisco/postgresql:/var/lib/postgresql
+      - netdisco-db:/var/lib/postgresql
     environment: *netdisco-env
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "netdisco"]
@@ -34,7 +34,7 @@ services:
       retries: 10
 
   netdisco-db-init:
-    image: quay.io/stefan_grosser/netdisco:feature-combined-5967d5be-backend
+    image: quay.io/stefan_grosser/netdisco:feature-combined-backend
     container_name: lens-netdisco-db-init
     entrypoint: ""
     command: "/home/netdisco/bin/netdisco-env /home/netdisco/bin/netdisco-updatedb.sh"
@@ -43,16 +43,16 @@ services:
       netdisco-postgresql:
         condition: service_healthy
     volumes:
-      - /home/sgr/code/netdisco-docker/netdisco/postgresql:/var/lib/pgversions/new
-      - /home/sgr/code/netdisco-docker/netdisco/config:/home/netdisco/environments
-      - /home/sgr/code/netdisco-docker/netdisco/nd-site-local:/home/netdisco/nd-site-local
-      - /home/sgr/code/netdisco-docker/netdisco/logs:/home/netdisco/logs
+      - netdisco-db:/var/lib/pgversions/new
+      - ./netdisco/config:/home/netdisco/environments
+      - ./netdisco/nd-site-local:/home/netdisco/nd-site-local
+      - netdisco-logs:/home/netdisco/logs
     environment:
       <<: *netdisco-env
       DEPLOY_ADMIN_USER: "YES"
 
   netdisco-backend:
-    image: quay.io/stefan_grosser/netdisco:feature-combined-5967d5be-backend
+    image: quay.io/stefan_grosser/netdisco:feature-combined-backend
     container_name: lens-netdisco-backend
     depends_on:
       netdisco-db-init:
@@ -63,7 +63,7 @@ services:
     dns_opt: *dns-opt
 
   netdisco-web:
-    image: quay.io/stefan_grosser/netdisco:feature-combined-5967d5be-web
+    image: quay.io/stefan_grosser/netdisco:feature-combined-web
     container_name: lens-netdisco-web
     depends_on:
       netdisco-db-init:
@@ -90,6 +90,10 @@ services:
     ports:
       - "8081:8080"
     env_file: discobox.env
+    volumes:
+      - ./discobox.yaml:/etc/discobox/discobox.yaml:ro
+      - ../../bit-discobox/discobox.py:/app/discobox.py:ro
+      - ../../bit-discobox/server.py:/app/server.py:ro
 
   # ── NetBox ────────────────────────────────────────────────────────────────
 
@@ -113,7 +117,7 @@ services:
       retries: 10
       start_period: 60s
     command: >-
-      sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
+      sh -c "echo /opt/netbox/netbox-lens > /opt/netbox/venv/lib/python3.12/site-packages/netbox-lens-dev.pth &&
              exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
 
   netbox-worker:
@@ -127,7 +131,7 @@ services:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/plugins.py:ro
     command: >-
-      sh -c "uv pip install -q --python /opt/netbox/venv/bin/python /opt/netbox/netbox-lens &&
+      sh -c "echo /opt/netbox/netbox-lens > /opt/netbox/venv/lib/python3.12/site-packages/netbox-lens-dev.pth &&
              exec /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker"
 
   postgres:
@@ -149,3 +153,5 @@ services:
 
 volumes:
   postgres-data:
+  netdisco-db:
+  netdisco-logs:
