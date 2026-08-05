@@ -1,0 +1,118 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "LENS – NAC Status" %}{% endblock %}
+
+{% block content %}
+<form method="get">
+  <div class="table-responsive">
+    <table class="table table-hover table-headings mb-0">
+      <thead>
+        <tr>
+          <th>{% trans "Device" %}</th>
+          <th>{% trans "PAE Enabled" %}</th>
+          <th>{% trans "Port" %}</th>
+          <th>{% trans "Description" %}</th>
+          <th>{% trans "Auth State" %}</th>
+          <th>{% trans "Port Control" %}</th>
+          <th>{% trans "Port Status" %}</th>
+          <th>{% trans "NAC User" %}</th>
+          <th>{% trans "MAB" %}</th>
+          <th>{% trans "Authenticator" %}</th>
+          <th>{% trans "Supplicant" %}</th>
+          <th>{% trans "Last EAPOL Source" %}</th>
+        </tr>
+        <tr>
+          <th>{{ form.device }}</th>
+          <th></th>
+          <th>{{ form.interface }}</th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="mdi mdi-magnify" aria-hidden="true"></i> {% trans "Search" %}
+            </button>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if searched %}
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.device_name }}</td>
+            <td>
+              {% if row.pae_enabled is None %}—
+              {% elif row.pae_enabled %}{% trans "yes" %}
+              {% else %}{% trans "no" %}{% endif %}
+            </td>
+            <td><code>{{ row.port }}</code></td>
+            <td>{{ row.descr|default:"—" }}</td>
+            <td>{{ row.authconfig_state|default:"—" }}</td>
+            <td>{{ row.port_control|default:"—" }}</td>
+            <td>{{ row.port_status|default:"—" }}</td>
+            <td>{{ row.user|default:"—" }}</td>
+            <td>
+              {% if row.mab is None %}—
+              {% elif row.mab %}{% trans "yes" %}
+              {% else %}{% trans "no" %}{% endif %}
+            </td>
+            <td>
+              {% if row.is_authenticator is None %}—
+              {% elif row.is_authenticator %}{% trans "yes" %}
+              {% else %}{% trans "no" %}{% endif %}
+            </td>
+            <td>
+              {% if row.is_supplicant is None %}—
+              {% elif row.is_supplicant %}{% trans "yes" %}
+              {% else %}{% trans "no" %}{% endif %}
+            </td>
+            <td>{{ row.last_eapol_source|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="12" class="text-muted">{% trans "No matching ports found." %}</td></tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% if form.non_field_errors or form.device.errors %}
+  {% for error in form.non_field_errors %}
+  <div class="alert alert-warning mt-2 mb-0 py-2">
+    <i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}
+  </div>
+  {% endfor %}
+  {% for error in form.device.errors %}
+  <div class="alert alert-warning mt-2 mb-0 py-2">
+    <i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}
+  </div>
+  {% endfor %}
+  {% endif %}
+</form>
+
+{% if config_error %}
+<div class="alert alert-danger mt-2">
+  <i class="mdi mdi-cog-off" aria-hidden="true"></i>
+  <strong>{% trans "Configuration error" %}:</strong> {{ config_error }}
+</div>
+{% endif %}
+
+{% if searched %}
+  {% if scan_truncated %}
+  <div class="alert alert-warning mt-2">
+    {% trans "Matched more devices or ports than could be scanned — narrow your search (e.g. by interface) for a complete result." %}
+  </div>
+  {% endif %}
+  {% if truncated %}
+  <div class="alert alert-warning mt-2">
+    {% trans "Showing" %} {{ rows|length }} {% trans "of" %} {{ total }}
+    {% trans "rows — refine your search for the full list." %}
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

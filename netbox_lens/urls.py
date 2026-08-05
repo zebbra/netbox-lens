@@ -14,6 +14,7 @@ urlpatterns = [
         views.LensInterfaceSearchView.as_view(page_title="Down Ports", default_filters={"admin": "down"}),
         name="down_ports",
     ),
+    path("nac-status/", views.LensNacStatusView.as_view(), name="nac_status"),
     path("status/", views.LensStatusView.as_view(), name="status"),
     path("discover/<int:pk>/", views.LensDiscoverView.as_view(), name="discover"),
 ]

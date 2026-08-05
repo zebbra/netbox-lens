@@ -63,6 +63,9 @@ class LensBackend(ABC):
     def device_ports(self, device_ip: str) -> list:
         return []
 
+    def port_pae(self, device_ip: str, port: str) -> dict:
+        return {}
+
     def search_ports(self, query: str, partial: bool = True) -> list:
         return []
 

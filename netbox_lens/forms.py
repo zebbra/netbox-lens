@@ -255,3 +255,25 @@ class InterfaceSearchForm(forms.Form):
         if cleaned.get("vlan") and not cleaned["vlan"].isdigit():
             raise forms.ValidationError("VLAN must be numeric.")
         return cleaned
+
+
+class NacStatusForm(forms.Form):
+    device = forms.CharField(
+        label="Device",
+        max_length=255,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Device name (partial)",
+            "autocomplete": "off",
+        }),
+    )
+    interface = forms.CharField(
+        label="Interface",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "e.g. 1/0/10 (partial)",
+            "autocomplete": "off",
+        }),
+    )

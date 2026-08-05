@@ -14,9 +14,10 @@ from utilities.views import ViewTab, register_model_view
 
 from .arp_history import build_arp_history
 from .backends import get_backends
-from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NodeSearchForm
+from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, build_interface_list
 from .mac_history import build_mac_history
+from .nac_status import build_nac_status
 
 try:
     from dcim.models import Device as NbDevice
@@ -326,6 +327,38 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
             })
 
         return render(request, "netbox_lens/interface_search.html", context)
+
+
+class LensNacStatusView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        form = NacStatusForm(request.GET or None)
+        context = {"form": form}
+
+        if form.is_valid():
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            backends = get_backends(config)
+            if not backends:
+                context["config_error"] = (
+                    "No backends are configured. Add at least one backend to "
+                    "PLUGINS_CONFIG['netbox_lens']['backends']."
+                )
+            else:
+                rows, total, truncated, scan_truncated = build_nac_status(
+                    backends,
+                    device_query=form.cleaned_data.get("device"),
+                    interface_query=form.cleaned_data.get("interface") or None,
+                )
+                context.update({
+                    "rows": rows,
+                    "total": total,
+                    "truncated": truncated,
+                    "scan_truncated": scan_truncated,
+                    "searched": True,
+                })
+
+        return render(request, "netbox_lens/nac_status.html", context)
 
 
 if NbDevice:

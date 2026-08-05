@@ -351,6 +351,9 @@ class NetdiscoBackend(LensBackend):
             return [
                 {
                     "port": p.get("port"),
+                    # Netdisco's own "descr" column is the raw SNMP ifDescr (same
+                    # as the port name); the human-set description lives in "name".
+                    "descr": p.get("name"),
                     "up": p.get("up"),
                     "up_admin": p.get("up_admin"),
                     "vlan": p.get("vlan"),
@@ -359,6 +362,37 @@ class NetdiscoBackend(LensBackend):
             ]
         except Exception:
             return []
+
+    def port_pae(self, device_ip: str, port: str) -> dict:
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return {}
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/object/device/{device_ip}/port/{port}/properties",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict):
+                return {}
+            return {
+                "authconfig_state": data.get("pae_authconfig_state"),
+                "port_control": data.get("pae_authconfig_port_control"),
+                "port_status": data.get("pae_authconfig_port_status"),
+                "user": data.get("pae_authsess_user"),
+                "mab": data.get("pae_authsess_mab"),
+                "last_eapol_source": data.get("pae_last_eapol_frame_source"),
+                "is_authenticator": data.get("pae_is_authenticator"),
+                "is_supplicant": data.get("pae_is_supplicant"),
+            }
+        except Exception:
+            return {}
 
     def device_summary(self, device_ip: str) -> dict:
         base_url = self.config.get("url", "").rstrip("/")
@@ -386,6 +420,7 @@ class NetdiscoBackend(LensBackend):
                 "last_discover": data.get("last_discover"),
                 "last_macsuck": data.get("last_macsuck"),
                 "last_arpnip": data.get("last_arpnip"),
+                "pae_enabled": data.get("pae_is_enabled"),
             }
         except Exception:
             return {}

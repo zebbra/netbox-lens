@@ -43,6 +43,11 @@ menu = PluginMenu(
                     link_text="Down Ports",
                     permissions=["netbox_lens.use_lens"],
                 ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:nac_status",
+                    link_text="NAC Status",
+                    permissions=["netbox_lens.use_lens"],
+                ),
             ),
         ),
         (
