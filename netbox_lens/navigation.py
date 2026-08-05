@@ -24,6 +24,11 @@ menu = PluginMenu(
             _("Legacy"),
             (
                 PluginMenuItem(
+                    link="plugins:netbox_lens:interface_search",
+                    link_text="Default",
+                    permissions=["netbox_lens.use_lens"],
+                ),
+                PluginMenuItem(
                     link="plugins:netbox_lens:mac_history",
                     link_text=_("MAC History"),
                     permissions=["netbox_lens.use_lens"],
@@ -31,11 +36,6 @@ menu = PluginMenu(
                 PluginMenuItem(
                     link="plugins:netbox_lens:arp_history",
                     link_text=_("ARP History"),
-                    permissions=["netbox_lens.use_lens"],
-                ),
-                PluginMenuItem(
-                    link="plugins:netbox_lens:interface_search",
-                    link_text="Default",
                     permissions=["netbox_lens.use_lens"],
                 ),
                 PluginMenuItem(

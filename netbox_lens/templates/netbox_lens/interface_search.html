@@ -5,6 +5,15 @@
 {% block title %}LENS – {{ page_title }}{% endblock %}
 
 {% block content %}
+{% url 'dcim:interface_list' as nb_interface_list_url %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-information-outline" aria-hidden="true"></i>
+  {% blocktrans trimmed %}
+  For more sophisticated filtering, use NetBox's own
+  <a href="{{ nb_interface_list_url }}">native interface search</a>
+  (see its Filters tab).
+  {% endblocktrans %}
+</div>
 <form method="get">
   <div class="table-responsive">
     <table class="table table-hover table-headings mb-0">
