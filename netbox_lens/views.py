@@ -21,8 +21,10 @@ from .nac_status import build_nac_status
 
 try:
     from dcim.models import Device as NbDevice
+    from dcim.models import Interface as NbInterface
 except ImportError:
     NbDevice = None
+    NbInterface = None
 
 MAX_MACARP_ROWS = 500
 
@@ -85,12 +87,18 @@ def _enrich_mac_history(rows):
         str(d.primary_ip4.address.ip): d
         for d in NbDevice.objects.filter(q).select_related("primary_ip4")
     }
+    iface_map = {}
+    if NbInterface and device_map:
+        for iface in NbInterface.objects.filter(device__in=device_map.values()).only("device_id", "name"):
+            iface_map[(iface.device_id, iface.name)] = iface.get_absolute_url()
     for r in rows:
         d = device_map.get(r.get("device_ip"))
         if d:
             r["nb_device_url"] = d.get_absolute_url()
             r["area"] = d.cf.get("service_group")
             r["device_name"] = r.get("device_name") or d.name
+            if r.get("port"):
+                r["nb_interface_url"] = iface_map.get((d.pk, r["port"]))
 
 
 def _enrich_arp_history(rows):
@@ -380,9 +388,17 @@ if NbDevice:
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             backends = get_backends(config)
             rows, total, truncated, _ = build_mac_history(backends, device_ip=ip, max_rows=MAX_MACARP_ROWS)
+            iface_map = {}
+            if NbInterface:
+                iface_map = {
+                    iface.name: iface.get_absolute_url()
+                    for iface in NbInterface.objects.filter(device=instance).only("name")
+                }
             for r in rows:
                 r["device_name"] = instance.name
                 r["area"] = instance.cf.get("service_group")
+                if r.get("port"):
+                    r["nb_interface_url"] = iface_map.get(r["port"])
             return {
                 "rows": rows,
                 "lens_device_ip": ip,

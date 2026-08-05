@@ -11,7 +11,7 @@
           <span class="badge text-bg-secondary">{{ total }}</span>
         </h5>
       </div>
-      {% include 'netbox_lens/mac_history_table.html' %}
+      {% include 'netbox_lens/mac_history_table.html' with hide_device_area=True %}
     </div>
   </div>
 </div>
