@@ -30,7 +30,12 @@ menu = PluginMenu(
                 ),
                 PluginMenuItem(
                     link="plugins:netbox_lens:interface_search",
-                    link_text=_("Default"),
+                    link_text="Default",
+                    permissions=["netbox_lens.use_lens"],
+                ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:down_ports",
+                    link_text="Down Ports",
                     permissions=["netbox_lens.use_lens"],
                 ),
             ),

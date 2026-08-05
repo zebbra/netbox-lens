@@ -9,6 +9,11 @@ urlpatterns = [
     path("mac-history/", views.LensMacHistoryView.as_view(), name="mac_history"),
     path("arp-history/", views.LensArpHistoryView.as_view(), name="arp_history"),
     path("interfaces/", views.LensInterfaceSearchView.as_view(), name="interface_search"),
+    path(
+        "down-ports/",
+        views.LensInterfaceSearchView.as_view(page_title="Down Ports", default_filters={"admin": "down"}),
+        name="down_ports",
+    ),
     path("status/", views.LensStatusView.as_view(), name="status"),
     path("discover/<int:pk>/", views.LensDiscoverView.as_view(), name="discover"),
 ]

@@ -280,10 +280,15 @@ class LensArpHistoryView(PermissionRequiredMixin, View):
 
 class LensInterfaceSearchView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.use_lens"
+    page_title = "Default"
+    default_filters = {}
 
     def get(self, request):
-        form = InterfaceSearchForm(request.GET or None)
-        context = {"form": form}
+        data = request.GET.copy()
+        for key, value in self.default_filters.items():
+            data.setdefault(key, value)
+        form = InterfaceSearchForm(data or None)
+        context = {"form": form, "page_title": self.page_title}
 
         if form.is_valid():
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
