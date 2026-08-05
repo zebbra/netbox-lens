@@ -13,6 +13,11 @@ menu = PluginMenu(
                     link_text=_("Endpoint"),
                     permissions=["netbox_lens.use_lens"],
                 ),
+                PluginMenuItem(
+                    link="dcim:interface_list",
+                    link_text="Interfaces",
+                    permissions=["netbox_lens.use_lens"],
+                ),
             ),
         ),
         (
