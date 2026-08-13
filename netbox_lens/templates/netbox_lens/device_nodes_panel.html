@@ -124,35 +124,42 @@
         </table>
       </div>
     </div>
-
-    {% if lens_neighbors %}
-    <table class="table table-hover table-headings mb-0">
-      <thead>
-        <tr>
-          <th>{% trans "Local Port" %}</th>
-          <th>{% trans "Neighbor" %}</th>
-          <th>{% trans "Remote Port" %}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for n in lens_neighbors %}
-        <tr>
-          <td>{{ n.port|default:"—" }}</td>
-          <td>
-            {% if n.nb_device_url %}
-            <a href="{{ n.nb_device_url }}">{{ n.remote_id|default:n.remote_ip }}</a>
-            {% else %}
-            {{ n.remote_id|default:n.remote_ip|default:"—" }}
-            {% endif %}
-          </td>
-          <td>{{ n.remote_port|default:"—" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
   </div>
 </div>
+
+{% if lens_neighbors %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-lan-connect" aria-hidden="true"></i>
+    <strong>{% trans "Neighbors" %}</strong>
+    <span class="badge text-bg-secondary">{{ lens_neighbors|length }}</span>
+  </div>
+  <table class="table table-hover table-headings mb-0">
+    <thead>
+      <tr>
+        <th>{% trans "Local Port" %}</th>
+        <th>{% trans "Neighbor" %}</th>
+        <th>{% trans "Remote Port" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for n in lens_neighbors %}
+      <tr>
+        <td>{{ n.port|default:"—" }}</td>
+        <td>
+          {% if n.nb_device_url %}
+          <a href="{{ n.nb_device_url }}">{{ n.remote_id|default:n.remote_ip }}</a>
+          {% else %}
+          {{ n.remote_id|default:n.remote_ip|default:"—" }}
+          {% endif %}
+        </td>
+        <td>{{ n.remote_port|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 {% if lens_can_trigger %}
 <div class="modal fade" id="lens-rebuild-modal" tabindex="-1" aria-hidden="true">
