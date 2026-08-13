@@ -23,9 +23,9 @@
     <i class="{{ s.icon }}" aria-hidden="true"></i>
     <strong>{{ s.label }}</strong>
     {% if s.ok %}
-      <span class="badge bg-success ms-auto">{% trans "reachable" %}</span>
+      <span class="badge text-bg-success ms-auto">{% trans "reachable" %}</span>
     {% else %}
-      <span class="badge bg-danger ms-auto">{% trans "error" %}</span>
+      <span class="badge text-bg-danger ms-auto">{% trans "error" %}</span>
     {% endif %}
   </div>
 
@@ -128,12 +128,12 @@
     {% if discobox_health.data.version %}<small class="text-muted">v{{ discobox_health.data.version }}</small>{% endif %}
     {% if discobox_health.ok %}
       {% if discobox_health.data.paused %}
-      <span class="badge bg-warning ms-auto">{% trans "paused" %}</span>
+      <span class="badge text-bg-warning ms-auto">{% trans "paused" %}</span>
       {% else %}
-      <span class="badge bg-success ms-auto">{% trans "running" %}</span>
+      <span class="badge text-bg-success ms-auto">{% trans "running" %}</span>
       {% endif %}
     {% else %}
-      <span class="badge bg-danger ms-auto">{% trans "unreachable" %}</span>
+      <span class="badge text-bg-danger ms-auto">{% trans "unreachable" %}</span>
     {% endif %}
   </div>
   <div class="card-body">
@@ -178,9 +178,9 @@
     <i class="mdi mdi-radar" aria-hidden="true"></i>
     <strong>{% trans "SNMP Modulator" %}</strong>
     {% if snmp_modulator_health.ok %}
-    <span class="badge bg-success ms-auto">{% trans "reachable" %}</span>
+    <span class="badge text-bg-success ms-auto">{% trans "reachable" %}</span>
     {% else %}
-    <span class="badge bg-danger ms-auto">{% trans "unreachable" %}</span>
+    <span class="badge text-bg-danger ms-auto">{% trans "unreachable" %}</span>
     {% endif %}
   </div>
   <div class="card-body">
