@@ -159,7 +159,20 @@
           {% if lens_snmp_modulator_last_updated %}
           <tr>
             <th scope="row">{% trans "SNMP Modulator last updated" %}</th>
-            <td><span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative }}</span></td>
+            <td>
+              <span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative }}</span>
+              {% if lens_can_trigger %}
+              <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
+                      data-bs-target="#lens-probe-modal"
+                      hx-post="{% url 'plugins:netbox_lens:probe' pk=lens_device_pk %}"
+                      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                      hx-vals='{"dry_run": "true"}'
+                      hx-target="#lens-probe-body" hx-swap="innerHTML" hx-trigger="click once"
+                      title="{% trans 'Probes the device\'s SNMP reachability directly (contacts the device).' %}">
+                <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Probe" %}
+              </button>
+              {% endif %}
+            </td>
           </tr>
           {% endif %}
         </table>
@@ -211,6 +224,19 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="lens-rebuild-body">
+        <div class="text-muted">{% trans "Loading preview…" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="lens-probe-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% trans "SNMP Probe" %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lens-probe-body">
         <div class="text-muted">{% trans "Loading preview…" %}</div>
       </div>
     </div>

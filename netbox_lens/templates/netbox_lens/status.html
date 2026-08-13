@@ -115,4 +115,86 @@
   <div class="alert alert-info">{% trans "No backends configured." %}</div>
 {% endfor %}
 
+{% if discobox_health %}
+<div class="card mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-sync" aria-hidden="true"></i>
+    <strong>{% trans "Discobox" %}</strong>
+    {% if discobox_health.ok %}
+      {% if discobox_health.data.paused %}
+      <span class="badge bg-warning ms-auto">{% trans "paused" %}</span>
+      {% else %}
+      <span class="badge bg-success ms-auto">{% trans "running" %}</span>
+      {% endif %}
+    {% else %}
+      <span class="badge bg-danger ms-auto">{% trans "unreachable" %}</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if discobox_health.error %}
+    <div class="alert alert-danger mb-0">
+      <i class="mdi mdi-alert-circle" aria-hidden="true"></i> {{ discobox_health.error }}
+    </div>
+    {% else %}
+    <table class="table table-sm mb-3">
+      <tr>
+        <td>{% trans "In-flight hosts" %}</td>
+        <td class="text-end fw-semibold">{{ discobox_health.data.in_flight|length }}</td>
+      </tr>
+      {% if discobox_health.data.in_flight %}
+      <tr><td colspan="2"><code>{{ discobox_health.data.in_flight|join:", " }}</code></td></tr>
+      {% endif %}
+    </table>
+    {% if lens_can_trigger %}
+    <form method="post" action="{% url 'plugins:netbox_lens:discobox_pause' %}" class="d-inline">
+      {% csrf_token %}
+      {% if discobox_health.data.paused %}
+      <input type="hidden" name="paused" value="false">
+      <button type="submit" class="btn btn-sm btn-outline-success">
+        <i class="mdi mdi-play" aria-hidden="true"></i> {% trans "Resume sync" %}
+      </button>
+      {% else %}
+      <input type="hidden" name="paused" value="true">
+      <button type="submit" class="btn btn-sm btn-outline-warning">
+        <i class="mdi mdi-pause" aria-hidden="true"></i> {% trans "Pause sync" %}
+      </button>
+      {% endif %}
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if snmp_modulator_health %}
+<div class="card mb-4">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-radar" aria-hidden="true"></i>
+    <strong>{% trans "SNMP Modulator" %}</strong>
+    {% if snmp_modulator_health.ok %}
+    <span class="badge bg-success ms-auto">{% trans "reachable" %}</span>
+    {% else %}
+    <span class="badge bg-danger ms-auto">{% trans "unreachable" %}</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if snmp_modulator_health.error %}
+    <div class="alert alert-danger mb-0">
+      <i class="mdi mdi-alert-circle" aria-hidden="true"></i> {{ snmp_modulator_health.error }}
+    </div>
+    {% else %}
+    <table class="table table-sm mb-0">
+      <tr>
+        <td>{% trans "Probes in progress" %}</td>
+        <td class="text-end fw-semibold">{{ snmp_modulator_health.data.probe_in_progress }}</td>
+      </tr>
+      {% if snmp_modulator_health.data.in_flight %}
+      <tr><td colspan="2"><code>{{ snmp_modulator_health.data.in_flight|join:", " }}</code></td></tr>
+      {% endif %}
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

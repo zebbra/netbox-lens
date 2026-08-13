@@ -21,4 +21,6 @@ urlpatterns = [
     path("arpnip/<int:pk>/", views.LensTriggerJobView.as_view(job_method="trigger_arpnip"), name="arpnip"),
     path("rebuild/<int:pk>/", views.LensRebuildInventoryView.as_view(), name="rebuild_inventory"),
     path("sync/<int:pk>/", views.LensSyncView.as_view(), name="sync"),
+    path("probe/<int:pk>/", views.LensProbeView.as_view(), name="probe"),
+    path("discobox/pause/", views.LensDiscoboxPauseView.as_view(), name="discobox_pause"),
 ]

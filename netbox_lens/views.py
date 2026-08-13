@@ -14,11 +14,14 @@ from utilities.views import ViewTab, register_model_view
 
 from .arp_history import build_arp_history
 from .backends import get_backends
-from .discobox import rebuild_inventory, sync_device
+from .discobox import health as discobox_health
+from .discobox import rebuild_inventory, set_paused, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, build_interface_list
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
+from .snmp_modulator import health as snmp_modulator_health
+from .snmp_modulator import probe as snmp_modulator_probe
 
 try:
     from dcim.models import Device as NbDevice
@@ -128,18 +131,56 @@ class LensStatusView(PermissionRequiredMixin, View):
     def get(self, request):
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
         backends = get_backends(config)
+        discobox_config = config.get("discobox", {})
+        modulator_config = config.get("snmp_modulator", {})
+
         statuses = []
         with ThreadPoolExecutor() as executor:
             futures = {executor.submit(b.status): b for b in backends}
+            if discobox_config.get("url"):
+                futures[executor.submit(discobox_health, discobox_config)] = "discobox"
+            if modulator_config.get("url"):
+                futures[executor.submit(snmp_modulator_health, modulator_config)] = "snmp_modulator"
+
+            discobox_result = None
+            modulator_result = None
             for future in as_completed(futures):
-                statuses.append(future.result())
+                tag = futures[future]
+                if tag == "discobox":
+                    ok, data, error = future.result()
+                    discobox_result = {"ok": ok, "data": data, "error": error}
+                elif tag == "snmp_modulator":
+                    ok, data, error = future.result()
+                    modulator_result = {"ok": ok, "data": data, "error": error}
+                else:
+                    statuses.append(future.result())
+
         return render(request, "netbox_lens/status.html", {
             "statuses": statuses,
+            "discobox_health": discobox_result,
+            "snmp_modulator_health": modulator_result,
+            "lens_can_trigger": request.user.has_perm("netbox_lens.trigger_lens"),
             "config_error": None if backends else (
                 "No backends configured. Add at least one backend to "
                 "PLUGINS_CONFIG['netbox_lens']['backends']."
             ),
         })
+
+
+class LensDiscoboxPauseView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request):
+        paused = request.POST.get("paused") == "true"
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
+        ok, data, error = set_paused(config, paused=paused)
+        if not ok:
+            messages.error(request, error)
+        else:
+            action = "paused" if paused else "resumed"
+            queued = (data or {}).get("queued", 0)
+            messages.success(request, f"Discobox sync {action} ({queued} queued).")
+        return redirect("plugins:netbox_lens:status")
 
 
 class LensSearchView(PermissionRequiredMixin, View):
@@ -257,6 +298,26 @@ class LensSyncView(PermissionRequiredMixin, View):
             messages.warning(request, f"Sync skipped for {ip}: {reason}.")
 
         return redirect(device.get_absolute_url())
+
+
+class LensProbeView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        dry_run = request.POST.get("dry_run", "true") != "false"
+        wait = request.POST.get("wait", "true") != "false"
+        context = {"device": device, "dry_run": dry_run, "wait": wait}
+
+        if not ip:
+            context["error"] = "This device has no primary IPv4 address."
+        else:
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
+            ok, status_code, data, error = snmp_modulator_probe(config, ip, dry_run=dry_run, wait=wait)
+            context.update({"ok": ok, "status_code": status_code, "data": data, "error": error})
+
+        return render(request, "netbox_lens/probe_modal.html", context)
 
 
 class LensMacHistoryView(PermissionRequiredMixin, View):

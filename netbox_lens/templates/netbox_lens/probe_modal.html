@@ -1,0 +1,152 @@
+{% load i18n %}
+
+{% if error %}
+<div class="alert alert-danger mb-0">{{ error }}</div>
+
+{% elif status_code == 200 %}
+{% with result=data.result %}
+<div class="mb-3">
+  <strong>{% trans "Device" %}:</strong> {{ result.device_name }}<br>
+  <strong>{% trans "Mode" %}:</strong>
+  {% if dry_run %}
+  <span class="badge text-bg-warning">{% trans "Dry run — preview only, nothing persisted" %}</span>
+  {% else %}
+  <span class="badge text-bg-danger">{% trans "Applied" %}</span>
+  {% endif %}
+  {% if result.unreachable %}
+  <span class="badge text-bg-danger">{% trans "Unreachable" %}</span>
+  {% endif %}
+</div>
+
+{% if result.error %}
+<div class="alert alert-warning">{{ result.error }}</div>
+{% endif %}
+
+<table class="table table-sm mb-3">
+  <tbody>
+    <tr>
+      <th>{% trans "Modules" %}</th>
+      <td>
+        {{ result.previous_modules|join:", "|default:"—" }}
+        {% if result.changed %}
+        <i class="mdi mdi-arrow-right" aria-hidden="true"></i>
+        <strong>{{ result.final_modules|join:", "|default:"—" }}</strong>
+        <span class="badge text-bg-warning">{% trans "changed" %}</span>
+        {% else %}
+        <span class="text-muted">({% trans "unchanged" %})</span>
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th>{% trans "Auth profile" %}</th>
+      <td>
+        {{ result.auth_profile|default:"—" }}
+        {% if result.auth_changed %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+      </td>
+    </tr>
+    {% if result.polling_interval %}
+    <tr><th>{% trans "Polling interval" %}</th><td>{{ result.polling_interval }}</td></tr>
+    {% endif %}
+    {% if result.polling_timeout %}
+    <tr><th>{% trans "Polling timeout" %}</th><td>{{ result.polling_timeout }}</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{% if result.test_results %}
+<table class="table table-sm mb-3">
+  <thead>
+    <tr>
+      <th>{% trans "Module" %}</th>
+      <th>{% trans "Useful" %}</th>
+      <th>{% trans "Metrics" %}</th>
+      <th>{% trans "Duration" %}</th>
+      <th>{% trans "Error" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in result.test_results %}
+    <tr>
+      <td>{{ t.module }}</td>
+      <td>{% if t.useful %}<span class="text-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>
+      <td>{{ t.metric_count }}</td>
+      <td>{{ t.duration_seconds }}s</td>
+      <td>{{ t.error|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if dry_run and result.changed %}
+<form hx-post="{% url 'plugins:netbox_lens:probe' pk=device.pk %}"
+      hx-target="#lens-probe-body" hx-swap="innerHTML" hx-indicator="#lens-probe-spinner">
+  {% csrf_token %}
+  <input type="hidden" name="dry_run" value="false">
+  <input type="hidden" name="wait" value="true">
+  <button type="submit" class="btn btn-danger btn-sm">
+    <i class="mdi mdi-content-save-check" aria-hidden="true"></i>
+    {% trans "Yes, I am sure — persist for real" %}
+  </button>
+</form>
+{% elif not dry_run %}
+<div class="text-success small">
+  <i class="mdi mdi-check-circle" aria-hidden="true"></i> {% trans "Done." %}
+</div>
+{% else %}
+<div class="text-muted small">{% trans "Nothing would change — no need to persist." %}</div>
+{% endif %}
+{% endwith %}
+
+{% elif status_code == 202 %}
+<div class="alert alert-info mb-0">
+  {% if data.status == "queued" %}
+  {% trans "Probe queued in the background." %}
+  {% else %}
+  {% trans "Skipped" %}: {{ data.reason|default:"already in progress" }}.
+  {% endif %}
+</div>
+
+{% elif status_code == 409 %}
+<div class="alert alert-warning mb-0">
+  {{ data.detail|default:"A probe for this device is already in progress." }}
+  {% trans "Try again shortly." %}
+</div>
+
+{% elif status_code == 503 %}
+<div class="alert alert-warning">
+  {{ data.detail|default:"The probe queue is busy right now — no slot freed up in time for a preview." }}
+</div>
+<form hx-post="{% url 'plugins:netbox_lens:probe' pk=device.pk %}"
+      hx-target="#lens-probe-body" hx-swap="innerHTML" hx-indicator="#lens-probe-spinner">
+  {% csrf_token %}
+  <input type="hidden" name="dry_run" value="true">
+  <input type="hidden" name="wait" value="false">
+  <button type="submit" class="btn btn-outline-secondary btn-sm">
+    <i class="mdi mdi-tray-arrow-down" aria-hidden="true"></i>
+    {% trans "Blindly accept and queue (no preview)" %}
+  </button>
+</form>
+
+{% elif status_code == 404 %}
+<div class="alert alert-warning mb-0">
+  {{ data.detail|default:"Device not found in NetBox or ineligible for probing." }}
+</div>
+
+{% elif status_code == 401 %}
+<div class="alert alert-danger mb-0">
+  {% trans "SNMP Modulator rejected the configured auth token." %}
+</div>
+
+{% elif status_code == 400 %}
+<div class="alert alert-danger mb-0">
+  {{ data.detail|default:"Bad request." }}
+</div>
+
+{% else %}
+<div class="alert alert-danger mb-0">
+  {% trans "Unexpected response" %} (HTTP {{ status_code }}): {{ data }}
+</div>
+{% endif %}
+
+<span id="lens-probe-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
