@@ -80,7 +80,8 @@
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:discover' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2">
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                        title="{% trans 'Schedules a job in Netdisco to rediscover this device — fetches fresh data from the device itself (SNMP).' %}">
                   <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Discover" %}
                 </button>
               </form>
@@ -96,7 +97,8 @@
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:macsuck' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2">
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                        title="{% trans 'Schedules a job in Netdisco to fetch the MAC address table from the device itself (SNMP).' %}">
                   <i class="mdi mdi-table-network" aria-hidden="true"></i> {% trans "Macsuck" %}
                 </button>
               </form>
@@ -112,7 +114,8 @@
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:arpnip' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2">
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                        title="{% trans 'Schedules a job in Netdisco to fetch the ARP table from the device itself (SNMP).' %}">
                   <i class="mdi mdi-lan-connect" aria-hidden="true"></i> {% trans "Arpnip" %}
                 </button>
               </form>
@@ -121,6 +124,44 @@
           </tr>
           {% endif %}
           {% endfor %}
+          {% if lens_bossy_last_updated %}
+          <tr>
+            <th scope="row">{% trans "Bossy last updated" %}</th>
+            <td><span title="{{ lens_bossy_last_updated|lens_absolute }}">{{ lens_bossy_last_updated|lens_relative }}</span></td>
+          </tr>
+          {% endif %}
+          {% if lens_netdisco_last_update %}
+          <tr>
+            <th scope="row">{% trans "Netdisco last update" %}</th>
+            <td>
+              <span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative }}</span>
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:sync' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="force" value="false">
+                <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2"
+                        title="{% trans 'Sync data from Netdisco to NetBox — database to database, does not contact the device.' %}">
+                  <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Sync" %}
+                </button>
+              </form>
+              <form method="post" action="{% url 'plugins:netbox_lens:sync' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="force" value="true">
+                <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2"
+                        title="{% trans 'Force sync data from Netdisco to NetBox, bypassing the cooldown — database to database, does not contact the device.' %}">
+                  <i class="mdi mdi-sync-alert" aria-hidden="true"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+          {% if lens_snmp_modulator_last_updated %}
+          <tr>
+            <th scope="row">{% trans "SNMP Modulator last updated" %}</th>
+            <td><span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative }}</span></td>
+          </tr>
+          {% endif %}
         </table>
       </div>
     </div>

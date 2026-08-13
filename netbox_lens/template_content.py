@@ -96,6 +96,7 @@ class DeviceLensPanel(PluginTemplateExtension):
             "neighbors": len(neighbors),
         }
         summaries = _device_summaries(backends, ip)
+        device = self.context["object"]
         return self.render("netbox_lens/device_nodes_panel.html", extra_context={
             "lens_stats": stats,
             "lens_device_ip": ip,
@@ -104,7 +105,10 @@ class DeviceLensPanel(PluginTemplateExtension):
             "lens_web_links": _device_web_links(backends, ip),
             "lens_neighbors": neighbors,
             "lens_can_trigger": self.context["request"].user.has_perm("netbox_lens.trigger_lens"),
-            "lens_device_pk": self.context["object"].pk,
+            "lens_device_pk": device.pk,
+            "lens_bossy_last_updated": device.cf.get("bossy_last_updated"),
+            "lens_netdisco_last_update": device.cf.get("netdisco_last_update"),
+            "lens_snmp_modulator_last_updated": device.cf.get("snmp_modulator_last_updated"),
         })
 
 

@@ -14,7 +14,7 @@ from utilities.views import ViewTab, register_model_view
 
 from .arp_history import build_arp_history
 from .backends import get_backends
-from .discobox import rebuild_inventory
+from .discobox import rebuild_inventory, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, build_interface_list
 from .mac_history import build_mac_history
@@ -233,6 +233,30 @@ class LensRebuildInventoryView(PermissionRequiredMixin, View):
             context.update({"ok": ok, "data": data, "error": error})
 
         return render(request, "netbox_lens/rebuild_modal.html", context)
+
+
+class LensSyncView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        if not ip:
+            messages.error(request, "This device has no primary IPv4 address.")
+            return redirect(device.get_absolute_url())
+
+        force = request.POST.get("force") == "true"
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
+        ok, data, error = sync_device(config, ip, force=force)
+        if not ok:
+            messages.error(request, error)
+        elif (data or {}).get("status") == "queued":
+            messages.success(request, f"Sync from Netdisco to NetBox queued for {ip}.")
+        else:
+            reason = (data or {}).get("reason") or "unknown reason"
+            messages.warning(request, f"Sync skipped for {ip}: {reason}.")
+
+        return redirect(device.get_absolute_url())
 
 
 class LensMacHistoryView(PermissionRequiredMixin, View):
