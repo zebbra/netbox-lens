@@ -90,7 +90,7 @@ class LensBackend(ABC):
     def device_web_url(self, device_ip: str) -> str | None:
         return None
 
-    def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
+    def trigger_discover(self, device_ip: str, auth_profile: str | None = None) -> tuple[bool, str]:
         return False, f"{self.label} does not support triggering discovery."
 
     def trigger_macsuck(self, device_ip: str) -> tuple[bool, str]:

@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import date
 
@@ -431,13 +432,16 @@ class NetdiscoBackend(LensBackend):
             return None
         return f"{web_url}/device?tab=details&q={device_ip}"
 
-    def _trigger_job(self, action: str, device_ip: str) -> tuple[bool, str]:
+    def _trigger_job(self, action: str, device_ip: str, extra: dict | None = None) -> tuple[bool, str]:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return False, "Netdisco URL is not configured."
         admin_token = os.environ.get("LENS_NETDISCO_ADMIN_TOKEN", self.config.get("admin_token", ""))
         if not admin_token:
             return False, "No Netdisco admin token configured for triggering jobs."
+        job = {"action": action, "device": device_ip}
+        if extra:
+            job["extra"] = json.dumps(extra)
         try:
             resp = requests.post(
                 f"{base_url}/api/v1/queue/jobs",
@@ -446,7 +450,7 @@ class NetdiscoBackend(LensBackend):
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
-                json=[{"action": action, "device": device_ip}],
+                json=[job],
                 timeout=self.config.get("timeout", 15),
                 verify=self.config.get("verify_ssl", True),
                 allow_redirects=False,
@@ -472,8 +476,13 @@ class NetdiscoBackend(LensBackend):
         except Exception as e:
             return False, str(e)
 
-    def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
-        return self._trigger_job("discover", device_ip)
+    def trigger_discover(self, device_ip: str, auth_profile: str | None = None) -> tuple[bool, str]:
+        # device_auth_tag_hint narrows Netdisco's SNMP credential attempts to
+        # the matching tag in its own device_auth config, instead of trying
+        # every configured community/credential in turn. An unknown/stale
+        # hint is harmless — Netdisco falls back to trying all of them.
+        extra = {"device_auth_tag_hint": auth_profile} if auth_profile else None
+        return self._trigger_job("discover", device_ip, extra=extra)
 
     def trigger_macsuck(self, device_ip: str) -> tuple[bool, str]:
         return self._trigger_job("macsuck", device_ip)

@@ -266,8 +266,14 @@ class LensTriggerJobView(PermissionRequiredMixin, View):
             messages.error(request, "No backends are configured.")
             return redirect(device.get_absolute_url())
 
+        kwargs = {}
+        if self.job_method == "trigger_discover":
+            auth_profile = device.cf.get("snmp_auth_profile")
+            if auth_profile:
+                kwargs["auth_profile"] = auth_profile
+
         for backend in backends:
-            success, message = getattr(backend, self.job_method)(ip)
+            success, message = getattr(backend, self.job_method)(ip, **kwargs)
             if success:
                 messages.success(request, message)
             else:
