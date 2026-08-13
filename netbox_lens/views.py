@@ -2,6 +2,7 @@ import operator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import reduce
 
+from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
@@ -158,6 +159,7 @@ class LensStatusView(PermissionRequiredMixin, View):
             "discobox_health": discobox_result,
             "snmp_modulator_health": modulator_result,
             "lens_can_trigger": request.user.has_perm("netbox_lens.trigger_lens"),
+            "lens_version": apps.get_app_config("netbox_lens").version,
             "config_error": None if backends else (
                 "No backends configured. Add at least one backend to "
                 "PLUGINS_CONFIG['netbox_lens']['backends']."
