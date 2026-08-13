@@ -60,8 +60,11 @@ def probe(config, device_ip, dry_run=True, wait=True):
 def health(config):
     """
     Call snmp-modulator's /health liveness endpoint (unauthenticated).
-    Returns {"status": "ok", "probe_in_progress": <int>, "in_flight": [<job-key>, ...]}
-    — job keys are strings like "host:<ip>" or "netbox:<filter>=<value>&...".
+    Returns {"status": "ok", "version": <str>, "probe_in_progress": <int>,
+    "in_flight": [<job-key>, ...], "netbox_only_module_count": <int>,
+    "snmp_exporter_only_module_count": <int>} — job keys are strings like
+    "host:<ip>" or "netbox:<filter>=<value>&...". The two mismatch counts
+    are a cheap preview of /stats's full module_mismatch lists.
 
     Returns (ok, data, error).
     """
@@ -71,6 +74,33 @@ def health(config):
     try:
         resp = requests.get(
             f"{base_url}/health",
+            headers={"Accept": "application/json"},
+            timeout=config.get("timeout", 15),
+            verify=config.get("verify_ssl", True),
+        )
+        resp.raise_for_status()
+        data = resp.json() if resp.content else {}
+        return True, data, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)
+
+
+def stats(config):
+    """
+    Call snmp-modulator's /stats endpoint (unauthenticated, same tier as
+    /health) for the full breakdowns /health only summarizes as counts:
+    devices_by_auth_profile ({profile: count}), devices_by_module
+    ({module: count}), and module_mismatch ({netbox_only: [...],
+    snmp_exporter_only: [...], netbox_only_count, snmp_exporter_only_count}).
+
+    Returns (ok, data, error).
+    """
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "SNMP Modulator URL is not configured."
+    try:
+        resp = requests.get(
+            f"{base_url}/stats",
             headers={"Accept": "application/json"},
             timeout=config.get("timeout", 15),
             verify=config.get("verify_ssl", True),

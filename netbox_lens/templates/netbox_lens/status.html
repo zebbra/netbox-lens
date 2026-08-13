@@ -1,5 +1,6 @@
 {% extends 'generic/_base.html' %}
 {% load i18n %}
+{% load lens_filters %}
 
 {% block title %}{% trans "LENS – Backend Status" %}{% endblock %}
 
@@ -167,6 +168,40 @@
       {% endif %}
     </form>
     {% endif %}
+
+    {% if discobox_health.stats.ok %}
+    {% with stats=discobox_health.stats.data %}
+    <hr>
+    <table class="table table-sm mb-0">
+      <tr>
+        <td>{% trans "Last reconcile" %}</td>
+        <td class="text-end"><span title="{{ stats.last_reconcile|lens_absolute }}">{{ stats.last_reconcile|lens_relative }}</span></td>
+      </tr>
+      <tr><td>{% trans "Unknown devices" %}</td><td class="text-end fw-semibold">{{ stats.unknown_devices_count }}</td></tr>
+      <tr><td>{% trans "Not in Netdisco" %}</td><td class="text-end fw-semibold">{{ stats.not_in_netdisco_count }}</td></tr>
+      <tr><td>{% trans "Not in NetBox" %}</td><td class="text-end fw-semibold">{{ stats.not_in_netbox_count }}</td></tr>
+      <tr><td>{% trans "Tag mismatches" %}</td><td class="text-end fw-semibold">{{ stats.tag_mismatches_count }}</td></tr>
+      {% if stats.liveness_enabled %}
+      <tr>
+        <td>{% trans "Liveness" %}</td>
+        <td class="text-end">
+          {% if stats.liveness.ok %}
+          <span class="badge text-bg-success">{% trans "ok" %}</span>
+          {% else %}
+          <span class="badge text-bg-danger">{% trans "error" %}</span>
+          {% endif %}
+          {{ stats.liveness.devices }} {% trans "devices" %}
+          <span class="text-muted small" title="{{ stats.liveness.checked|lens_absolute }}">({{ stats.liveness.checked|lens_relative }})</span>
+        </td>
+      </tr>
+      {% endif %}
+    </table>
+    {% endwith %}
+    {% elif discobox_health.stats.error %}
+    <div class="alert alert-warning mt-3 mb-0 py-2">
+      <i class="mdi mdi-alert" aria-hidden="true"></i> {% trans "Stats unavailable" %}: {{ discobox_health.stats.error }}
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 </div>
@@ -197,7 +232,59 @@
       {% if snmp_modulator_health.data.in_flight %}
       <tr><td colspan="2"><code>{{ snmp_modulator_health.data.in_flight|join:", " }}</code></td></tr>
       {% endif %}
+      <tr><td>{% trans "NetBox-only modules" %}</td><td class="text-end fw-semibold">{{ snmp_modulator_health.data.netbox_only_module_count|default:0 }}</td></tr>
+      <tr><td>{% trans "SNMP Exporter-only modules" %}</td><td class="text-end fw-semibold">{{ snmp_modulator_health.data.snmp_exporter_only_module_count|default:0 }}</td></tr>
     </table>
+
+    {% if snmp_modulator_health.stats.ok %}
+    {% with stats=snmp_modulator_health.stats.data %}
+    <hr>
+    <div class="row g-3">
+      <div class="col-12 col-md-6">
+        <h6 class="text-muted">{% trans "Devices by auth profile" %}</h6>
+        <table class="table table-sm mb-0">
+          {% for profile, count in stats.devices_by_auth_profile.items %}
+          <tr><td>{{ profile }}</td><td class="text-end fw-semibold">{{ count }}</td></tr>
+          {% empty %}
+          <tr><td class="text-muted">{% trans "None" %}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+      <div class="col-12 col-md-6">
+        <h6 class="text-muted">{% trans "Devices by module" %}</h6>
+        <table class="table table-sm mb-0">
+          {% for module, count in stats.devices_by_module.items %}
+          <tr><td>{{ module }}</td><td class="text-end fw-semibold">{{ count }}</td></tr>
+          {% empty %}
+          <tr><td class="text-muted">{% trans "None" %}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% if stats.module_mismatch.netbox_only or stats.module_mismatch.snmp_exporter_only %}
+    <hr>
+    <h6 class="text-muted">{% trans "Module mismatch" %}</h6>
+    <table class="table table-sm mb-0">
+      <tr>
+        <td>{% trans "NetBox only" %}</td>
+        <td class="text-end">
+          {% if stats.module_mismatch.netbox_only %}<code>{{ stats.module_mismatch.netbox_only|join:", " }}</code>{% else %}—{% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td>{% trans "SNMP Exporter only" %}</td>
+        <td class="text-end">
+          {% if stats.module_mismatch.snmp_exporter_only %}<code>{{ stats.module_mismatch.snmp_exporter_only|join:", " }}</code>{% else %}—{% endif %}
+        </td>
+      </tr>
+    </table>
+    {% endif %}
+    {% endwith %}
+    {% elif snmp_modulator_health.stats.error %}
+    <div class="alert alert-warning mt-3 mb-0 py-2">
+      <i class="mdi mdi-alert" aria-hidden="true"></i> {% trans "Stats unavailable" %}: {{ snmp_modulator_health.stats.error }}
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 </div>

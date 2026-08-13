@@ -61,6 +61,34 @@ def health(config):
         return False, None, str(exc)
 
 
+def stats(config):
+    """
+    Call discobox's /stats endpoint (unauthenticated, same tier as
+    /health and /metrics) for a richer snapshot than /health carries:
+    version, paused, in_flight (a count here, not the host list /health
+    returns), last_reconcile (epoch seconds), unknown/not_in_netdisco/
+    not_in_netbox/tag_mismatches counts, and a liveness sub-object
+    ({"ok", "devices", "checked"}) when liveness_enabled.
+
+    Returns (ok, data, error).
+    """
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "Discobox URL is not configured."
+    try:
+        resp = requests.get(
+            f"{base_url}/stats",
+            headers={"Accept": "application/json"},
+            timeout=config.get("timeout", 15),
+            verify=config.get("verify_ssl", True),
+        )
+        resp.raise_for_status()
+        data = resp.json() if resp.content else {}
+        return True, data, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)
+
+
 def set_paused(config, paused):
     """
     Call discobox's /sync/pause or /sync/resume — pauses or resumes its

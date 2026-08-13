@@ -16,12 +16,13 @@ from utilities.views import ViewTab, register_model_view
 from .arp_history import build_arp_history
 from .backends import get_backends
 from .discobox import health as discobox_health
-from .discobox import rebuild_inventory, set_paused, sync_device
+from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, build_interface_list
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
+from .snmp_modulator import stats as snmp_modulator_stats
 from .snmp_modulator import probe as snmp_modulator_probe
 
 try:
@@ -153,6 +154,24 @@ class LensStatusView(PermissionRequiredMixin, View):
                     modulator_result = {"ok": ok, "data": data, "error": error}
                 else:
                     statuses.append(future.result())
+
+        # Only fetch the richer /stats snapshot for services whose /health
+        # just succeeded — no point waiting on stats from something already
+        # confirmed unreachable.
+        with ThreadPoolExecutor() as executor:
+            stats_futures = {}
+            if discobox_result and discobox_result["ok"]:
+                stats_futures[executor.submit(discobox_stats, discobox_config)] = "discobox"
+            if modulator_result and modulator_result["ok"]:
+                stats_futures[executor.submit(snmp_modulator_stats, modulator_config)] = "snmp_modulator"
+            for future in as_completed(stats_futures):
+                tag = stats_futures[future]
+                ok, data, error = future.result()
+                result = {"ok": ok, "data": data, "error": error}
+                if tag == "discobox":
+                    discobox_result["stats"] = result
+                else:
+                    modulator_result["stats"] = result
 
         return render(request, "netbox_lens/status.html", {
             "statuses": statuses,
