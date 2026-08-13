@@ -431,7 +431,7 @@ class NetdiscoBackend(LensBackend):
             return None
         return f"{web_url}/device?tab=details&q={device_ip}"
 
-    def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
+    def _trigger_job(self, action: str, device_ip: str) -> tuple[bool, str]:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return False, "Netdisco URL is not configured."
@@ -446,7 +446,7 @@ class NetdiscoBackend(LensBackend):
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
-                json=[{"action": "discover", "device": device_ip}],
+                json=[{"action": action, "device": device_ip}],
                 timeout=self.config.get("timeout", 15),
                 verify=self.config.get("verify_ssl", True),
                 allow_redirects=False,
@@ -456,7 +456,7 @@ class NetdiscoBackend(LensBackend):
             resp.raise_for_status()
             data = resp.json() if resp.content else {}
             if isinstance(data, dict) and data.get("success"):
-                return True, f"Discover job queued for {device_ip}."
+                return True, f"{action.capitalize()} job queued for {device_ip}."
             return False, "Netdisco did not confirm the job was queued."
         except requests.ConnectionError:
             return False, "Could not reach Netdisco — check the configured URL."
@@ -471,6 +471,15 @@ class NetdiscoBackend(LensBackend):
             return False, f"Netdisco returned HTTP {status}."
         except Exception as e:
             return False, str(e)
+
+    def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
+        return self._trigger_job("discover", device_ip)
+
+    def trigger_macsuck(self, device_ip: str) -> tuple[bool, str]:
+        return self._trigger_job("macsuck", device_ip)
+
+    def trigger_arpnip(self, device_ip: str) -> tuple[bool, str]:
+        return self._trigger_job("arpnip", device_ip)
 
     def status(self) -> BackendStatus:
         s = BackendStatus(backend=self.name, label=self.label, icon=self.icon)

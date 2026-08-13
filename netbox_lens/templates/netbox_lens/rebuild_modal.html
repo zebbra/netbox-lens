@@ -1,0 +1,45 @@
+{% load i18n %}
+
+{% if error %}
+<div class="alert alert-danger mb-0">{{ error }}</div>
+{% else %}
+<div class="mb-3">
+  <strong>{% trans "Host" %}:</strong> {{ data.hostname|default:data.host }}<br>
+  <strong>{% trans "Mode" %}:</strong>
+  {% if dry_run %}
+  <span class="badge text-bg-warning">{% trans "Dry run — preview only, nothing deleted" %}</span>
+  {% else %}
+  <span class="badge text-bg-danger">{% trans "Applied" %}</span>
+  {% endif %}
+</div>
+<table class="table table-sm mb-3">
+  <tbody>
+    <tr><th>{% trans "Interfaces deleted" %}</th><td>{{ data.prune.interfaces_deleted }}</td></tr>
+    <tr><th>{% trans "Modules deleted" %}</th><td>{{ data.prune.modules_deleted }}</td></tr>
+    <tr><th>{% trans "Modules skipped (foreign)" %}</th><td>{{ data.prune.modules_skipped_foreign }}</td></tr>
+    <tr><th>{% trans "Inventory items deleted" %}</th><td>{{ data.prune.inventory_deleted }}</td></tr>
+    <tr><th>{% trans "SFPs deleted" %}</th><td>{{ data.prune.sfps_deleted }}</td></tr>
+  </tbody>
+</table>
+{% if data.reason %}
+<div class="alert alert-warning">{{ data.reason }}</div>
+{% endif %}
+
+{% if dry_run %}
+<form hx-post="{% url 'plugins:netbox_lens:rebuild_inventory' pk=device.pk %}"
+      hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-indicator="#lens-rebuild-spinner">
+  {% csrf_token %}
+  <input type="hidden" name="dry_run" value="false">
+  <button type="submit" class="btn btn-danger btn-sm">
+    <i class="mdi mdi-delete-alert" aria-hidden="true"></i>
+    {% trans "Yes, I am sure — delete for real" %}
+  </button>
+</form>
+{% else %}
+<div class="text-success small">
+  <i class="mdi mdi-check-circle" aria-hidden="true"></i> {% trans "Done." %}
+</div>
+{% endif %}
+{% endif %}
+
+<span id="lens-rebuild-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>

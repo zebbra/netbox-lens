@@ -93,5 +93,11 @@ class LensBackend(ABC):
     def trigger_discover(self, device_ip: str) -> tuple[bool, str]:
         return False, f"{self.label} does not support triggering discovery."
 
+    def trigger_macsuck(self, device_ip: str) -> tuple[bool, str]:
+        return False, f"{self.label} does not support triggering macsuck."
+
+    def trigger_arpnip(self, device_ip: str) -> tuple[bool, str]:
+        return False, f"{self.label} does not support triggering arpnip."
+
     def status(self) -> BackendStatus:
         return BackendStatus(backend=self.name, label=self.label, icon=self.icon)

@@ -14,6 +14,7 @@ from utilities.views import ViewTab, register_model_view
 
 from .arp_history import build_arp_history
 from .backends import get_backends
+from .discobox import rebuild_inventory
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, build_interface_list
 from .mac_history import build_mac_history
@@ -188,8 +189,9 @@ class LensSearchView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/search.html", context)
 
 
-class LensDiscoverView(PermissionRequiredMixin, View):
+class LensTriggerJobView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.trigger_lens"
+    job_method = "trigger_discover"
 
     def post(self, request, pk):
         device = get_object_or_404(NbDevice, pk=pk)
@@ -205,13 +207,32 @@ class LensDiscoverView(PermissionRequiredMixin, View):
             return redirect(device.get_absolute_url())
 
         for backend in backends:
-            success, message = backend.trigger_discover(ip)
+            success, message = getattr(backend, self.job_method)(ip)
             if success:
                 messages.success(request, message)
             else:
                 messages.error(request, message)
 
         return redirect(device.get_absolute_url())
+
+
+class LensRebuildInventoryView(PermissionRequiredMixin, View):
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        dry_run = request.POST.get("dry_run", "true") != "false"
+        context = {"device": device, "dry_run": dry_run}
+
+        if not ip:
+            context["error"] = "This device has no primary IPv4 address."
+        else:
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
+            ok, data, error = rebuild_inventory(config, ip, dry_run=dry_run)
+            context.update({"ok": ok, "data": data, "error": error})
+
+        return render(request, "netbox_lens/rebuild_modal.html", context)
 
 
 class LensMacHistoryView(PermissionRequiredMixin, View):

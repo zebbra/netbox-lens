@@ -16,5 +16,8 @@ urlpatterns = [
     ),
     path("nac-status/", views.LensNacStatusView.as_view(), name="nac_status"),
     path("status/", views.LensStatusView.as_view(), name="status"),
-    path("discover/<int:pk>/", views.LensDiscoverView.as_view(), name="discover"),
+    path("discover/<int:pk>/", views.LensTriggerJobView.as_view(job_method="trigger_discover"), name="discover"),
+    path("macsuck/<int:pk>/", views.LensTriggerJobView.as_view(job_method="trigger_macsuck"), name="macsuck"),
+    path("arpnip/<int:pk>/", views.LensTriggerJobView.as_view(job_method="trigger_arpnip"), name="arpnip"),
+    path("rebuild/<int:pk>/", views.LensRebuildInventoryView.as_view(), name="rebuild_inventory"),
 ]

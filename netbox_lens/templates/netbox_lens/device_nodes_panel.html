@@ -6,7 +6,17 @@
   <div class="card-header d-flex align-items-center gap-2">
     <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
     <strong>LENS</strong>
-    {% if lens_backends %}<small class="text-muted ms-auto">— {% trans "powered by" %} {{ lens_backends|join:", " }}</small>{% endif %}
+    {% if lens_backends %}<small class="text-muted">— {% trans "powered by" %} {{ lens_backends|join:", " }}</small>{% endif %}
+    {% if lens_can_trigger %}
+    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 ms-auto" data-bs-toggle="modal"
+            data-bs-target="#lens-rebuild-modal"
+            hx-post="{% url 'plugins:netbox_lens:rebuild_inventory' pk=lens_device_pk %}"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            hx-vals='{"dry_run": "true"}'
+            hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-trigger="click once">
+      <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Rebuild Inventory" %}
+    </button>
+    {% endif %}
   </div>
   <div class="card-body">
     <div class="d-flex gap-4">
@@ -81,13 +91,33 @@
           {% if summary.last_macsuck %}
           <tr>
             <th scope="row">{% trans "Last macsuck" %}</th>
-            <td><span title="{{ summary.last_macsuck|lens_absolute }}">{{ summary.last_macsuck|lens_relative }}</span></td>
+            <td>
+              <span title="{{ summary.last_macsuck|lens_absolute }}">{{ summary.last_macsuck|lens_relative }}</span>
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:macsuck' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2">
+                  <i class="mdi mdi-table-network" aria-hidden="true"></i> {% trans "Macsuck" %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% endif %}
           {% if summary.last_arpnip %}
           <tr>
             <th scope="row">{% trans "Last arpnip" %}</th>
-            <td><span title="{{ summary.last_arpnip|lens_absolute }}">{{ summary.last_arpnip|lens_relative }}</span></td>
+            <td>
+              <span title="{{ summary.last_arpnip|lens_absolute }}">{{ summary.last_arpnip|lens_relative }}</span>
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:arpnip' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2">
+                  <i class="mdi mdi-lan-connect" aria-hidden="true"></i> {% trans "Arpnip" %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% endif %}
           {% endfor %}
@@ -123,6 +153,22 @@
     {% endif %}
   </div>
 </div>
+
+{% if lens_can_trigger %}
+<div class="modal fade" id="lens-rebuild-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% trans "Rebuild Inventory" %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lens-rebuild-body">
+        <div class="text-muted">{% trans "Loading preview…" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% elif lens_nodes %}
 <div class="card mb-3">
