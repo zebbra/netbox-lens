@@ -137,10 +137,8 @@ class LensStatusView(PermissionRequiredMixin, View):
         statuses = []
         with ThreadPoolExecutor() as executor:
             futures = {executor.submit(b.status): b for b in backends}
-            if discobox_config.get("url"):
-                futures[executor.submit(discobox_health, discobox_config)] = "discobox"
-            if modulator_config.get("url"):
-                futures[executor.submit(snmp_modulator_health, modulator_config)] = "snmp_modulator"
+            futures[executor.submit(discobox_health, discobox_config)] = "discobox"
+            futures[executor.submit(snmp_modulator_health, modulator_config)] = "snmp_modulator"
 
             discobox_result = None
             modulator_result = None
