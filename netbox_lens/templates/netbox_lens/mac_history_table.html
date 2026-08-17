@@ -56,7 +56,10 @@
           {% if row.client_ip %}<code class="lens-copy" data-value="{{ row.client_ip }}">{{ row.client_ip }}</code>
           {% else %}—{% endif %}
         </td>
-        <td>{{ row.client_name|default:"—" }}</td>
+        <td>
+          {% if row.client_name %}<code class="lens-copy" data-value="{{ row.client_name }}">{{ row.client_name }}</code>
+          {% else %}—{% endif %}
+        </td>
         {% if not hide_device_area %}
         <td>{{ row.area|default:"—" }}</td>
         {% endif %}

@@ -74,24 +74,14 @@ code.lens-copy { cursor: pointer; border-radius: 3px; }
 </style>
 <script>
 (function () {
-  var partial = document.getElementById('id_partial');
   var dateFrom = document.getElementById('id_date_from');
   var dateTo = document.getElementById('id_date_to');
   var presetGroup = document.querySelector('.lens-date-presets');
-  var presetButtons = presetGroup ? presetGroup.querySelectorAll('button') : [];
-  if (!partial || !dateFrom || !dateTo) return;
+  if (!dateFrom || !dateTo) return;
 
   function fmt(d) {
     return d.toISOString().slice(0, 10);
   }
-
-  function enforcePartialMode() {
-    dateFrom.disabled = partial.checked;
-    dateTo.disabled = partial.checked;
-    presetButtons.forEach(function (b) { b.disabled = partial.checked; });
-  }
-  partial.addEventListener('change', enforcePartialMode);
-  enforcePartialMode();
 
   if (presetGroup) {
     presetGroup.addEventListener('click', function (e) {

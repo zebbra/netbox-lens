@@ -55,6 +55,10 @@ def _enrich_results(results):
             name = ip.get("router_name")
             if name:
                 names.add(name)
+        for mac in r.macs or []:
+            name = mac.get("router_name")
+            if name:
+                names.add(name)
     if names:
         url_map = {d.name: d.get_absolute_url() for d in NbDevice.objects.filter(name__in=names)}
         for r in results or []:
@@ -66,6 +70,10 @@ def _enrich_results(results):
                 name = ip.get("router_name")
                 if name and name in url_map:
                     ip["nb_device_url"] = url_map[name]
+            for mac in r.macs or []:
+                name = mac.get("router_name")
+                if name and name in url_map:
+                    mac["nb_device_url"] = url_map[name]
 
     ips = {d["ip"] for r in results or [] for d in (r.devices or []) if d.get("ip")}
     if ips:
@@ -214,11 +222,12 @@ class LensSearchView(PermissionRequiredMixin, View):
             partial = form.cleaned_data.get("partial", False)
             date_from = form.cleaned_data.get("date_from")
             date_to = form.cleaned_data.get("date_to")
-            # Partial (wildcard) matches combined with a full archived-date-range
-            # search are expensive on Netdisco's side — restrict partial matches
-            # to the currently-active dataset regardless of the picked dates.
-            since = date_from.isoformat() if (date_from and not partial) else None
-            until = date_to.isoformat() if (date_to and not partial) else None
+            # Partial (wildcard) matches without an explicit date range stay
+            # active-only — combining partial with a full archived scan is
+            # expensive on Netdisco's side for broad queries. But if the user
+            # explicitly picked a range, honor it even in partial mode.
+            since = date_from.isoformat() if date_from else None
+            until = date_to.isoformat() if date_to else None
             archived = bool(since)
 
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
@@ -312,6 +321,10 @@ class LensSyncView(PermissionRequiredMixin, View):
             return redirect(device.get_absolute_url())
 
         force = request.POST.get("force") == "true"
+        if force and not request.user.is_superuser:
+            messages.error(request, "Force sync is restricted to administrators.")
+            return redirect(device.get_absolute_url())
+
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
         ok, data, error = sync_device(config, ip, force=force)
         if not ok:

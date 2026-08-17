@@ -325,7 +325,10 @@
           <tr>
             <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
             <td><code class="lens-copy" data-value="{{ row.ip }}">{{ row.ip }}</code></td>
-            <td>{{ row.dns|default:"—" }}</td>
+            <td>
+              {% if row.dns %}<code class="lens-copy" data-value="{{ row.dns }}">{{ row.dns }}</code>
+              {% else %}—{% endif %}
+            </td>
             <td>{{ row.manufacturer.company|default:"—" }}</td>
             <td>
               {% if dname %}
@@ -346,48 +349,6 @@
             </td>
           </tr>
           {% endwith %}
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
-  {# Resolved MACs (IP/hostname search path) #}
-  {% if backend.macs %}
-  <div class="card mb-3">
-    <div class="card-header">
-      <h6 class="mb-0">
-        <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i>
-        {% trans "Resolved MACs" %}
-        <span class="badge text-bg-secondary ms-1">{{ backend.macs|length }}</span>
-      </h6>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-hover table-headings mb-0">
-        <thead>
-          <tr>
-            <th>{% trans "MAC" %}</th>
-            <th>{% trans "IP" %}</th>
-            <th>{% trans "DNS" %}</th>
-            <th>{% trans "Router" %}</th>
-            <th>{% trans "Last Seen" %}</th>
-            <th>{% trans "Active" %}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in backend.macs %}
-          <tr>
-            <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
-            <td><code class="lens-copy" data-value="{{ row.ip }}">{{ row.ip }}</code></td>
-            <td>{{ row.dns|default:"—" }}</td>
-            <td>{{ row.router_name|default:row.router_ip|default:"—" }}</td>
-            <td>{{ row.time_last_stamp|default:"—" }}</td>
-            <td>
-              {% if row.active %}<span class="badge text-bg-green">{% trans "yes" %}</span>
-              {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}
-            </td>
-          </tr>
           {% endfor %}
         </tbody>
       </table>

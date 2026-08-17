@@ -10,8 +10,10 @@ from .backends import get_backends
 
 try:
     from dcim.models import Device as NbDevice
+    from dcim.models import Interface as NbInterface
 except ImportError:
     NbDevice = None
+    NbInterface = None
 
 
 def _device_nodes(backends, device_ip, port=None, since=None, until=None):
@@ -37,14 +39,25 @@ def _device_summaries(backends, device_ip):
     return summaries
 
 
-def _device_neighbors(backends, device_ip):
+def _device_neighbors(backends, device_ip, device=None):
     neighbors = []
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(b.device_neighbors, device_ip) for b in backends]
         for future in as_completed(futures):
             neighbors.extend(future.result())
 
-    if NbDevice:
+    if NbInterface and device and neighbors:
+        local_ports = {n["port"] for n in neighbors if n.get("port")}
+        if local_ports:
+            iface_map = {
+                iface.name: iface.get_absolute_url()
+                for iface in NbInterface.objects.filter(device=device, name__in=local_ports).only("name")
+            }
+            for n in neighbors:
+                if n.get("port") in iface_map:
+                    n["nb_local_port_url"] = iface_map[n["port"]]
+
+    if NbDevice and neighbors:
         ips = {n["remote_ip"] for n in neighbors if n.get("remote_ip")}
         if ips:
             q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
@@ -55,6 +68,25 @@ def _device_neighbors(backends, device_ip):
             for n in neighbors:
                 if n.get("remote_ip") in url_map:
                     n["nb_device_url"] = url_map[n["remote_ip"]]
+
+        # Fallback for neighbors that didn't resolve by IP: Netdisco's CDP/LLDP
+        # remote_id is often the bare hostname while NetBox device names are
+        # FQDNs, so match on a name prefix instead of an exact name.
+        missing = [n for n in neighbors if not n.get("nb_device_url") and n.get("remote_id")]
+        rids = {n["remote_id"].strip().rstrip(".") for n in missing if n["remote_id"].strip()}
+        if rids:
+            q = reduce(operator.or_, (Q(name__istartswith=rid) for rid in rids))
+            candidates = list(NbDevice.objects.filter(q).order_by("name"))
+            name_url_map = {}
+            for rid in rids:
+                rid_lower = rid.lower()
+                match = next((d for d in candidates if d.name.lower().startswith(rid_lower)), None)
+                if match:
+                    name_url_map[rid] = match.get_absolute_url()
+            for n in missing:
+                rid = n["remote_id"].strip().rstrip(".")
+                if rid in name_url_map:
+                    n["nb_device_url"] = name_url_map[rid]
 
     return neighbors
 
@@ -87,8 +119,9 @@ class DeviceLensPanel(PluginTemplateExtension):
         backends = get_backends(config)
         if not backends:
             return ""
+        device = self.context["object"]
         nodes = [n for n in _device_nodes(backends, ip) if n.get("active")]
-        neighbors = _device_neighbors(backends, ip)
+        neighbors = _device_neighbors(backends, ip, device=device)
         stats = {
             "macs": len(nodes),
             "ports": len({n["port"] for n in nodes if n.get("port")}),
@@ -96,7 +129,6 @@ class DeviceLensPanel(PluginTemplateExtension):
             "neighbors": len(neighbors),
         }
         summaries = _device_summaries(backends, ip)
-        device = self.context["object"]
         return self.render("netbox_lens/device_nodes_panel.html", extra_context={
             "lens_stats": stats,
             "lens_device_ip": ip,
@@ -105,6 +137,7 @@ class DeviceLensPanel(PluginTemplateExtension):
             "lens_web_links": _device_web_links(backends, ip),
             "lens_neighbors": neighbors,
             "lens_can_trigger": self.context["request"].user.has_perm("netbox_lens.trigger_lens"),
+            "lens_is_superuser": self.context["request"].user.is_superuser,
             "lens_device_pk": device.pk,
             "lens_bossy_last_updated": device.cf.get("bossy_last_updated"),
             "lens_netdisco_last_update": device.cf.get("netdisco_last_update"),

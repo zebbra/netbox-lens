@@ -49,8 +49,11 @@ class NetdiscoBackend(LensBackend):
             if not isinstance(data, dict):
                 data = {}
             result.sightings = data.get("sightings") or []
-            result.ips = data.get("ips") or []
-            result.macs = data.get("macs") or []
+            # Netdisco returns node/IP rows under "ips" when the query resolved
+            # via a MAC address match, or under "macs" when it resolved via
+            # hostname/IP/vendor — same row shape either way, just two names
+            # for the same dataset depending on which internal path matched.
+            result.ips = (data.get("ips") or []) + (data.get("macs") or [])
 
             # Always fetch the full port sighting history per MAC without a
             # daterange — the initial search may have been date-filtered but
@@ -82,7 +85,12 @@ class NetdiscoBackend(LensBackend):
 
             # Device name/hostname matching is a separate Netdisco entity from
             # node/MAC sightings — query it too so switch/router hostnames
-            # (not just end-host MACs/IPs) are actually searchable.
+            # (not just end-host MACs/IPs) are actually searchable. Use the
+            # "name" filter (Device.name only) rather than "q" — "q" is a
+            # fuzzy match across contact/serial/location/description/dns and
+            # any of the device's *other* interface IP aliases, so a router
+            # with an unrelated client-facing SVI in the searched domain would
+            # otherwise show up as a false-positive "device" match.
             try:
                 dresp = requests.get(
                     f"{base_url}/api/v1/search/device",
@@ -90,7 +98,7 @@ class NetdiscoBackend(LensBackend):
                         "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
                         "Accept": "application/json",
                     },
-                    params={"q": query},
+                    params={"name": query},
                     timeout=self.config.get("timeout", 15),
                     verify=self.config.get("verify_ssl", True),
                 )
