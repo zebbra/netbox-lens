@@ -305,6 +305,17 @@ class LensRebuildInventoryView(PermissionRequiredMixin, View):
         else:
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
             ok, data, error = rebuild_inventory(config, ip, dry_run=dry_run)
+            # discobox reports its own failures as HTTP 200 with status="error"/"skipped"
+            # rather than an HTTP error, so a transport-level success isn't enough here.
+            if ok and data.get("status") == "error":
+                error = data.get("reason") or (
+                    "Discobox could not rebuild this device — Netdisco has no record of it "
+                    "(not discovered yet, or unreachable)."
+                )
+                ok = False
+            elif ok and data.get("status") == "skipped":
+                error = f"Rebuild skipped: {data.get('reason') or 'sync is paused or already in progress'}."
+                ok = False
             context.update({"ok": ok, "data": data, "error": error})
 
         return render(request, "netbox_lens/rebuild_modal.html", context)
