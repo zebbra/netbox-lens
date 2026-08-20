@@ -349,16 +349,34 @@ class LensSyncView(PermissionRequiredMixin, View):
         return redirect(device.get_absolute_url())
 
 
+def _module_diff(previous, final):
+    """Merge a before/after module list into one sorted list tagged with
+    each module's status, so the template can render a single list with
+    additions/removals highlighted instead of two separate before/after lists."""
+    previous = set(previous or [])
+    final = set(final or [])
+    return [
+        {
+            "name": m,
+            "status": "added" if m in final and m not in previous else
+                      "removed" if m in previous and m not in final else "unchanged",
+        }
+        for m in sorted(previous | final)
+    ]
+
+
 def _annotate_probe_result(result):
     """Add template-friendly derived flags to a ModulationResult dict in place:
     has_fast (whether the fast polling profile applies to this device at all),
-    fast_changed (its module set differs from before), and pending (whether
-    there's anything at all for a follow-up commit to write)."""
+    fast_changed (its module set differs from before), the merged module diffs,
+    and pending (whether there's anything at all for a follow-up commit to write)."""
     fast_changed = result.get("previous_modules_fast") != result.get("final_modules_fast")
     result["has_fast"] = bool(
         result.get("previous_modules_fast") or result.get("final_modules_fast") or result.get("resolved_interval_fast")
     )
     result["fast_changed"] = fast_changed
+    result["normal_module_diff"] = _module_diff(result.get("previous_modules"), result.get("final_modules"))
+    result["fast_module_diff"] = _module_diff(result.get("previous_modules_fast"), result.get("final_modules_fast"))
     result["pending"] = any([
         result.get("changed"),
         result.get("auth_changed"),

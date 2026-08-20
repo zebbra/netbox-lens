@@ -9,7 +9,7 @@
   <strong>{% trans "Device" %}:</strong> {{ result.device_name }}<br>
   <strong>{% trans "Mode" %}:</strong>
   {% if dry_run %}
-  <span class="badge text-bg-warning">{% trans "Dry run — preview only, nothing persisted" %}</span>
+  <span class="badge text-bg-warning">{% trans "Dry run" %}</span>
   {% else %}
   <span class="badge text-bg-danger">{% trans "Applied" %}</span>
   {% endif %}
@@ -27,8 +27,10 @@
     <tr>
       <th>{% trans "Auth profile" %}</th>
       <td>
-        {{ result.auth_profile|default:"—" }}
-        {% if result.auth_changed %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+        <span class="{% if result.auth_changed %}text-warning fw-semibold{% endif %}">
+          {% if result.auth_changed %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
+          {{ result.auth_profile|default:"—" }}
+        </span>
       </td>
     </tr>
     {% if result.pending_add_tags or result.pending_remove_tags %}
@@ -49,28 +51,35 @@
     <table class="table table-sm mb-0">
       <tbody>
         <tr>
-          <th>{% trans "Modules" %}</th>
-          <td>
-            {{ result.previous_modules|join:", "|default:"—" }}
-            {% if result.changed %}
-            <i class="mdi mdi-arrow-right" aria-hidden="true"></i>
-            <strong>{{ result.final_modules|join:", "|default:"—" }}</strong>
-            <span class="badge text-bg-warning">{% trans "changed" %}</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
           <th>{% trans "Interval" %}</th>
           <td>
-            {{ result.resolved_interval|default:"—" }}
-            {% if result.polling_interval %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+            <span class="{% if result.polling_interval %}text-warning fw-semibold{% endif %}">
+              {% if result.polling_interval %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
+              {{ result.resolved_interval|default:"—" }}
+            </span>
           </td>
         </tr>
         <tr>
           <th>{% trans "Timeout" %}</th>
           <td>
-            {{ result.resolved_timeout|default:"—" }}
-            {% if result.polling_timeout %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+            <span class="{% if result.polling_timeout %}text-warning fw-semibold{% endif %}">
+              {% if result.polling_timeout %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
+              {{ result.resolved_timeout|default:"—" }}
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <th>{% trans "Modules" %}</th>
+          <td>
+            <ul class="list-unstyled mb-0">
+              {% for m in result.normal_module_diff %}
+              <li class="{% if m.status == 'removed' %}text-muted text-decoration-line-through{% elif m.status == 'added' %}text-warning fw-semibold{% endif %}">
+                {% if m.status == 'added' %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i> {% endif %}{{ m.name }}
+              </li>
+              {% empty %}
+              <li class="text-muted">—</li>
+              {% endfor %}
+            </ul>
           </td>
         </tr>
       </tbody>
@@ -82,28 +91,35 @@
     <table class="table table-sm mb-0">
       <tbody>
         <tr>
-          <th>{% trans "Modules" %}</th>
-          <td>
-            {{ result.previous_modules_fast|join:", "|default:"—" }}
-            {% if result.fast_changed %}
-            <i class="mdi mdi-arrow-right" aria-hidden="true"></i>
-            <strong>{{ result.final_modules_fast|join:", "|default:"—" }}</strong>
-            <span class="badge text-bg-warning">{% trans "changed" %}</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
           <th>{% trans "Interval" %}</th>
           <td>
-            {{ result.resolved_interval_fast|default:"—" }}
-            {% if result.polling_interval_fast %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+            <span class="{% if result.polling_interval_fast %}text-warning fw-semibold{% endif %}">
+              {% if result.polling_interval_fast %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
+              {{ result.resolved_interval_fast|default:"—" }}
+            </span>
           </td>
         </tr>
         <tr>
           <th>{% trans "Timeout" %}</th>
           <td>
-            {{ result.resolved_timeout_fast|default:"—" }}
-            {% if result.polling_timeout_fast %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+            <span class="{% if result.polling_timeout_fast %}text-warning fw-semibold{% endif %}">
+              {% if result.polling_timeout_fast %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
+              {{ result.resolved_timeout_fast|default:"—" }}
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <th>{% trans "Modules" %}</th>
+          <td>
+            <ul class="list-unstyled mb-0">
+              {% for m in result.fast_module_diff %}
+              <li class="{% if m.status == 'removed' %}text-muted text-decoration-line-through{% elif m.status == 'added' %}text-warning fw-semibold{% endif %}">
+                {% if m.status == 'added' %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i> {% endif %}{{ m.name }}
+              </li>
+              {% empty %}
+              <li class="text-muted">—</li>
+              {% endfor %}
+            </ul>
           </td>
         </tr>
       </tbody>
@@ -116,7 +132,7 @@
 <table class="table table-sm mb-3">
   <thead>
     <tr>
-      <th>{% trans "Module" %}</th>
+      <th>{% trans "Tested Modules" %}</th>
       {% if result.has_fast %}<th>{% trans "Profile" %}</th>{% endif %}
       <th>{% trans "Useful" %}</th>
       <th>{% trans "Metrics" %}</th>
@@ -131,16 +147,16 @@
       {% if result.has_fast %}
       <td>
         {% if t.module in result.final_modules_fast or t.module in result.previous_modules_fast %}
-        <span class="badge text-bg-info">{% trans "fast" %}</span>
+        <span class="badge text-bg-primary">{% trans "fast" %}</span>
         {% else %}
-        <span class="badge text-bg-light text-dark">{% trans "normal" %}</span>
+        <span class="badge text-bg-secondary">{% trans "normal" %}</span>
         {% endif %}
       </td>
       {% endif %}
       <td>{% if t.useful %}<span class="text-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>
       <td>{{ t.metric_count }}</td>
       <td>{{ t.duration_seconds }}s</td>
-      <td>{{ t.error|default:"—" }}</td>
+      <td>{% if t.error %}<span title="{{ t.error }}">{{ t.error|truncatechars:10 }}</span>{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
