@@ -19,6 +19,7 @@
     {% endif %}
   </div>
   <div class="card-body">
+    {% if lens_found %}
     <div class="d-flex gap-4">
       <div class="text-center">
         <div class="fs-4 fw-bold">{{ lens_stats.macs }}</div>
@@ -37,6 +38,9 @@
         <div class="text-muted small">{% trans "Neighbors" %}</div>
       </div>
     </div>
+    {% else %}
+    <div class="text-muted">{% trans "Device not found in" %} {{ lens_backends|join:", " }}.</div>
+    {% endif %}
     <hr class="my-3">
     <div class="row">
       <div class="col-6">
@@ -125,11 +129,11 @@
           {% endif %}
           {% endfor %}
           <tr>
-            <th scope="row">{% trans "Bossy last updated" %}</th>
+            <th scope="row">{% trans "Bossy" %}</th>
             <td><span title="{{ lens_bossy_last_updated|lens_absolute }}">{{ lens_bossy_last_updated|lens_relative|default:"—" }}</span></td>
           </tr>
           <tr>
-            <th scope="row">{% trans "Netdisco last update" %}</th>
+            <th scope="row">{% trans "Netdisco" %}</th>
             <td>
               <span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative|default:"—" }}</span>
               {% if lens_can_trigger %}
@@ -155,7 +159,7 @@
             </td>
           </tr>
           <tr>
-            <th scope="row">{% trans "SNMP Modulator last updated" %}</th>
+            <th scope="row">{% trans "SNMP Modulator" %}</th>
             <td>
               <span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative|default:"—" }}</span>
               {% if lens_can_trigger %}
@@ -235,7 +239,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">{% trans "SNMP Probe" %}</h5>
+        <h5 class="modal-title">{% trans "SNMP Modulator" %}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="lens-probe-body">

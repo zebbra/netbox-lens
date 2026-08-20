@@ -91,9 +91,14 @@ def _device_neighbors(backends, device_ip, device=None):
     return neighbors
 
 
-def _device_web_links(backends, device_ip):
+def _device_web_links(backends, device_ip, found_labels):
+    """Only link out to backends that actually have this device — device_web_url()
+    just formats a URL from the IP, so linking unconditionally would offer a
+    dead link for devices a backend has never discovered."""
     links = []
     for b in backends:
+        if b.label not in found_labels:
+            continue
         url = b.device_web_url(device_ip)
         if url:
             links.append((b.label, url))
@@ -129,12 +134,14 @@ class DeviceLensPanel(PluginTemplateExtension):
             "neighbors": len(neighbors),
         }
         summaries = _device_summaries(backends, ip)
+        found_labels = {label for label, _ in summaries}
         return self.render("netbox_lens/device_nodes_panel.html", extra_context={
             "lens_stats": stats,
+            "lens_found": bool(summaries),
             "lens_device_ip": ip,
             "lens_summaries": summaries,
             "lens_backends": [b.label for b in backends],
-            "lens_web_links": _device_web_links(backends, ip),
+            "lens_web_links": _device_web_links(backends, ip, found_labels),
             "lens_neighbors": neighbors,
             "lens_can_trigger": self.context["request"].user.has_perm("netbox_lens.trigger_lens"),
             "lens_is_superuser": self.context["request"].user.is_superuser,

@@ -349,6 +349,29 @@ class LensSyncView(PermissionRequiredMixin, View):
         return redirect(device.get_absolute_url())
 
 
+def _annotate_probe_result(result):
+    """Add template-friendly derived flags to a ModulationResult dict in place:
+    has_fast (whether the fast polling profile applies to this device at all),
+    fast_changed (its module set differs from before), and pending (whether
+    there's anything at all for a follow-up commit to write)."""
+    fast_changed = result.get("previous_modules_fast") != result.get("final_modules_fast")
+    result["has_fast"] = bool(
+        result.get("previous_modules_fast") or result.get("final_modules_fast") or result.get("resolved_interval_fast")
+    )
+    result["fast_changed"] = fast_changed
+    result["pending"] = any([
+        result.get("changed"),
+        result.get("auth_changed"),
+        result.get("polling_interval"),
+        result.get("polling_timeout"),
+        result.get("polling_interval_fast"),
+        result.get("polling_timeout_fast"),
+        result.get("pending_add_tags"),
+        result.get("pending_remove_tags"),
+        fast_changed,
+    ])
+
+
 class LensProbeView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.trigger_lens"
 
@@ -364,6 +387,8 @@ class LensProbeView(PermissionRequiredMixin, View):
         else:
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
             ok, status_code, data, error = snmp_modulator_probe(config, ip, dry_run=dry_run, wait=wait)
+            if ok and status_code == 200 and isinstance(data, dict) and isinstance(data.get("result"), dict):
+                _annotate_probe_result(data["result"])
             context.update({"ok": ok, "status_code": status_code, "data": data, "error": error})
 
         return render(request, "netbox_lens/probe_modal.html", context)

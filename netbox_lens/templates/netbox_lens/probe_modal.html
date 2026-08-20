@@ -25,39 +25,99 @@
 <table class="table table-sm mb-3">
   <tbody>
     <tr>
-      <th>{% trans "Modules" %}</th>
-      <td>
-        {{ result.previous_modules|join:", "|default:"—" }}
-        {% if result.changed %}
-        <i class="mdi mdi-arrow-right" aria-hidden="true"></i>
-        <strong>{{ result.final_modules|join:", "|default:"—" }}</strong>
-        <span class="badge text-bg-warning">{% trans "changed" %}</span>
-        {% else %}
-        <span class="text-muted">({% trans "unchanged" %})</span>
-        {% endif %}
-      </td>
-    </tr>
-    <tr>
       <th>{% trans "Auth profile" %}</th>
       <td>
         {{ result.auth_profile|default:"—" }}
         {% if result.auth_changed %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
       </td>
     </tr>
-    {% if result.polling_interval %}
-    <tr><th>{% trans "Polling interval" %}</th><td>{{ result.polling_interval }}</td></tr>
-    {% endif %}
-    {% if result.polling_timeout %}
-    <tr><th>{% trans "Polling timeout" %}</th><td>{{ result.polling_timeout }}</td></tr>
+    {% if result.pending_add_tags or result.pending_remove_tags %}
+    <tr>
+      <th>{% trans "Tags" %}</th>
+      <td>
+        {% for t in result.pending_add_tags %}<span class="badge text-bg-success">+{{ t }}</span> {% endfor %}
+        {% for t in result.pending_remove_tags %}<span class="badge text-bg-secondary">-{{ t }}</span> {% endfor %}
+      </td>
+    </tr>
     {% endif %}
   </tbody>
 </table>
+
+<div class="row mb-3">
+  <div class="{% if result.has_fast %}col-6{% else %}col-12{% endif %}">
+    <div class="text-muted small text-uppercase mb-1">{% trans "Normal polling" %}</div>
+    <table class="table table-sm mb-0">
+      <tbody>
+        <tr>
+          <th>{% trans "Modules" %}</th>
+          <td>
+            {{ result.previous_modules|join:", "|default:"—" }}
+            {% if result.changed %}
+            <i class="mdi mdi-arrow-right" aria-hidden="true"></i>
+            <strong>{{ result.final_modules|join:", "|default:"—" }}</strong>
+            <span class="badge text-bg-warning">{% trans "changed" %}</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>{% trans "Interval" %}</th>
+          <td>
+            {{ result.resolved_interval|default:"—" }}
+            {% if result.polling_interval %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>{% trans "Timeout" %}</th>
+          <td>
+            {{ result.resolved_timeout|default:"—" }}
+            {% if result.polling_timeout %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% if result.has_fast %}
+  <div class="col-6">
+    <div class="text-muted small text-uppercase mb-1">{% trans "Fast polling" %}</div>
+    <table class="table table-sm mb-0">
+      <tbody>
+        <tr>
+          <th>{% trans "Modules" %}</th>
+          <td>
+            {{ result.previous_modules_fast|join:", "|default:"—" }}
+            {% if result.fast_changed %}
+            <i class="mdi mdi-arrow-right" aria-hidden="true"></i>
+            <strong>{{ result.final_modules_fast|join:", "|default:"—" }}</strong>
+            <span class="badge text-bg-warning">{% trans "changed" %}</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>{% trans "Interval" %}</th>
+          <td>
+            {{ result.resolved_interval_fast|default:"—" }}
+            {% if result.polling_interval_fast %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>{% trans "Timeout" %}</th>
+          <td>
+            {{ result.resolved_timeout_fast|default:"—" }}
+            {% if result.polling_timeout_fast %}<span class="badge text-bg-warning">{% trans "changed" %}</span>{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
 
 {% if result.test_results %}
 <table class="table table-sm mb-3">
   <thead>
     <tr>
       <th>{% trans "Module" %}</th>
+      {% if result.has_fast %}<th>{% trans "Profile" %}</th>{% endif %}
       <th>{% trans "Useful" %}</th>
       <th>{% trans "Metrics" %}</th>
       <th>{% trans "Duration" %}</th>
@@ -68,6 +128,15 @@
     {% for t in result.test_results %}
     <tr>
       <td>{{ t.module }}</td>
+      {% if result.has_fast %}
+      <td>
+        {% if t.module in result.final_modules_fast or t.module in result.previous_modules_fast %}
+        <span class="badge text-bg-info">{% trans "fast" %}</span>
+        {% else %}
+        <span class="badge text-bg-light text-dark">{% trans "normal" %}</span>
+        {% endif %}
+      </td>
+      {% endif %}
       <td>{% if t.useful %}<span class="text-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>
       <td>{{ t.metric_count }}</td>
       <td>{{ t.duration_seconds }}s</td>
@@ -78,15 +147,16 @@
 </table>
 {% endif %}
 
-{% if dry_run and result.changed %}
+{% if dry_run and result.pending %}
 <form hx-post="{% url 'plugins:netbox_lens:probe' pk=device.pk %}"
       hx-target="#lens-probe-body" hx-swap="innerHTML" hx-indicator="#lens-probe-spinner">
   {% csrf_token %}
   <input type="hidden" name="dry_run" value="false">
   <input type="hidden" name="wait" value="true">
-  <button type="submit" class="btn btn-danger btn-sm">
+  <button type="submit" class="btn btn-danger btn-sm"
+          title="{% trans 'Applies the preview above exactly as shown — SNMP Modulator caches it briefly and writes it straight to NetBox without probing the device again.' %}">
     <i class="mdi mdi-content-save-check" aria-hidden="true"></i>
-    {% trans "Yes, I am sure — persist for real" %}
+    {% trans "Commit" %}
   </button>
 </form>
 {% elif not dry_run %}
@@ -94,7 +164,7 @@
   <i class="mdi mdi-check-circle" aria-hidden="true"></i> {% trans "Done." %}
 </div>
 {% else %}
-<div class="text-muted small">{% trans "Nothing would change — no need to persist." %}</div>
+<div class="text-muted small">{% trans "Nothing would change — no need to commit." %}</div>
 {% endif %}
 {% endwith %}
 
