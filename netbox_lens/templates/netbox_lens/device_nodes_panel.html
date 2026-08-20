@@ -124,17 +124,14 @@
           </tr>
           {% endif %}
           {% endfor %}
-          {% if lens_bossy_last_updated %}
           <tr>
             <th scope="row">{% trans "Bossy last updated" %}</th>
-            <td><span title="{{ lens_bossy_last_updated|lens_absolute }}">{{ lens_bossy_last_updated|lens_relative }}</span></td>
+            <td><span title="{{ lens_bossy_last_updated|lens_absolute }}">{{ lens_bossy_last_updated|lens_relative|default:"—" }}</span></td>
           </tr>
-          {% endif %}
-          {% if lens_netdisco_last_update %}
           <tr>
             <th scope="row">{% trans "Netdisco last update" %}</th>
             <td>
-              <span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative }}</span>
+              <span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative|default:"—" }}</span>
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:sync' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
@@ -157,12 +154,10 @@
               {% endif %}
             </td>
           </tr>
-          {% endif %}
-          {% if lens_snmp_modulator_last_updated %}
           <tr>
             <th scope="row">{% trans "SNMP Modulator last updated" %}</th>
             <td>
-              <span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative }}</span>
+              <span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative|default:"—" }}</span>
               {% if lens_can_trigger %}
               <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
                       data-bs-target="#lens-probe-modal"
@@ -176,7 +171,6 @@
               {% endif %}
             </td>
           </tr>
-          {% endif %}
         </table>
       </div>
     </div>
