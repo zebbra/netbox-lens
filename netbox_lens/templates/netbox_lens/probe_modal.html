@@ -18,6 +18,41 @@
   {% endif %}
 </div>
 
+{% if result.test_results %}
+<table class="table table-sm mb-3">
+  <thead>
+    <tr>
+      <th>{% trans "Tested Modules" %}</th>
+      {% if result.has_fast %}<th>{% trans "Profile" %}</th>{% endif %}
+      <th>{% trans "Useful" %}</th>
+      <th>{% trans "Metrics" %}</th>
+      <th>{% trans "Duration" %}</th>
+      <th>{% trans "Error" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in result.test_results %}
+    <tr>
+      <td>{{ t.module }}</td>
+      {% if result.has_fast %}
+      <td>
+        {% if t.module in result.final_modules_fast or t.module in result.previous_modules_fast %}
+        <span class="badge text-bg-primary">{% trans "fast" %}</span>
+        {% else %}
+        <span class="badge text-bg-secondary">{% trans "normal" %}</span>
+        {% endif %}
+      </td>
+      {% endif %}
+      <td>{% if t.useful %}<span class="text-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>
+      <td>{{ t.metric_count }}</td>
+      <td>{{ t.duration_seconds }}s</td>
+      <td>{% if t.error %}<span title="{{ t.error }}">{{ t.error|truncatechars:10 }}</span>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 {% if result.error %}
 <div class="alert alert-warning">{{ result.error }}</div>
 {% endif %}
@@ -127,41 +162,6 @@
   </div>
   {% endif %}
 </div>
-
-{% if result.test_results %}
-<table class="table table-sm mb-3">
-  <thead>
-    <tr>
-      <th>{% trans "Tested Modules" %}</th>
-      {% if result.has_fast %}<th>{% trans "Profile" %}</th>{% endif %}
-      <th>{% trans "Useful" %}</th>
-      <th>{% trans "Metrics" %}</th>
-      <th>{% trans "Duration" %}</th>
-      <th>{% trans "Error" %}</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for t in result.test_results %}
-    <tr>
-      <td>{{ t.module }}</td>
-      {% if result.has_fast %}
-      <td>
-        {% if t.module in result.final_modules_fast or t.module in result.previous_modules_fast %}
-        <span class="badge text-bg-primary">{% trans "fast" %}</span>
-        {% else %}
-        <span class="badge text-bg-secondary">{% trans "normal" %}</span>
-        {% endif %}
-      </td>
-      {% endif %}
-      <td>{% if t.useful %}<span class="text-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>
-      <td>{{ t.metric_count }}</td>
-      <td>{{ t.duration_seconds }}s</td>
-      <td>{% if t.error %}<span title="{{ t.error }}">{{ t.error|truncatechars:10 }}</span>{% else %}—{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
 
 {% if dry_run and result.pending %}
 <form hx-post="{% url 'plugins:netbox_lens:probe' pk=device.pk %}"
