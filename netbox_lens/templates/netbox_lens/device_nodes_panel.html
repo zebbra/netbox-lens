@@ -6,7 +6,8 @@
   <div class="card-header d-flex align-items-center gap-2">
     <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
     <strong>LENS</strong>
-    {% if lens_backends %}<small class="text-muted">— {% trans "powered by" %} {{ lens_backends|join:", " }}</small>{% endif %}
+    <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+       title="{% trans 'Endpoint and neighbor data comes directly from Netdisco. Discobox syncs Netdisco\'s inventory (interfaces, modules, tags) into NetBox. SNMP Modulator resolves and writes each device\'s SNMP polling config (modules, auth profile, intervals) into NetBox custom fields.' %}"></i>
     {% if lens_can_trigger %}
     <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 ms-auto" data-bs-toggle="modal"
             data-bs-target="#lens-rebuild-modal"
