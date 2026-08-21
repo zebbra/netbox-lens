@@ -18,11 +18,11 @@
   {% endif %}
 </div>
 
-{% if result.test_results %}
+{% if result.module_rows %}
 <table class="table table-sm mb-3">
   <thead>
     <tr>
-      <th>{% trans "Tested Modules" %}</th>
+      <th>{% trans "Module" %}</th>
       {% if result.has_fast %}<th>{% trans "Profile" %}</th>{% endif %}
       <th>{% trans "Useful" %}</th>
       <th>{% trans "Metrics" %}</th>
@@ -31,22 +31,27 @@
     </tr>
   </thead>
   <tbody>
-    {% for t in result.test_results %}
+    {% for t in result.module_rows %}
     <tr>
       <td>{{ t.module }}</td>
       {% if result.has_fast %}
       <td>
-        {% if t.module in result.final_modules_fast or t.module in result.previous_modules_fast %}
-        <span class="badge text-bg-primary">{% trans "fast" %}</span>
+        {% if t.profile == "fast" %}
+        <span class="badge text-bg-primary"><i class="mdi mdi-rabbit" aria-hidden="true"></i> {% trans "fast" %}</span>
         {% else %}
-        <span class="badge text-bg-secondary">{% trans "normal" %}</span>
+        <span class="badge text-bg-secondary"><i class="mdi mdi-turtle" aria-hidden="true"></i> {% trans "normal" %}</span>
         {% endif %}
       </td>
       {% endif %}
+      {% if t.tested %}
       <td>{% if t.useful %}<span class="text-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>
       <td>{{ t.metric_count }}</td>
       <td>{{ t.duration_seconds }}s</td>
       <td>{% if t.error %}<span title="{{ t.error }}">{{ t.error|truncatechars:10 }}</span>{% else %}—{% endif %}</td>
+      {% else %}
+      <td colspan="3"><span class="text-muted small">{% trans "Added (mandatory) — not probed" %}</span></td>
+      <td>—</td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>
@@ -62,7 +67,7 @@
     <tr>
       <th>{% trans "Auth profile" %}</th>
       <td>
-        <span class="{% if result.auth_changed %}text-warning fw-semibold{% endif %}">
+        <span class="{% if result.auth_changed %}text-warning{% endif %}">
           {% if result.auth_changed %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
           {{ result.auth_profile|default:"—" }}
         </span>
@@ -82,13 +87,13 @@
 
 <div class="row mb-3">
   <div class="{% if result.has_fast %}col-6{% else %}col-12{% endif %}">
-    <div class="text-muted small text-uppercase mb-1">{% trans "Normal polling" %}</div>
+    <div class="fw-semibold text-uppercase mb-2"><i class="mdi mdi-turtle" aria-hidden="true"></i> {% trans "Normal polling" %}</div>
     <table class="table table-sm mb-0">
       <tbody>
         <tr>
           <th>{% trans "Interval" %}</th>
           <td>
-            <span class="{% if result.polling_interval %}text-warning fw-semibold{% endif %}">
+            <span class="{% if result.polling_interval %}text-warning{% endif %}">
               {% if result.polling_interval %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
               {{ result.resolved_interval|default:"—" }}
             </span>
@@ -97,7 +102,7 @@
         <tr>
           <th>{% trans "Timeout" %}</th>
           <td>
-            <span class="{% if result.polling_timeout %}text-warning fw-semibold{% endif %}">
+            <span class="{% if result.polling_timeout %}text-warning{% endif %}">
               {% if result.polling_timeout %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
               {{ result.resolved_timeout|default:"—" }}
             </span>
@@ -108,7 +113,7 @@
           <td>
             <ul class="list-unstyled mb-0">
               {% for m in result.normal_module_diff %}
-              <li class="{% if m.status == 'removed' %}text-muted text-decoration-line-through{% elif m.status == 'added' %}text-warning fw-semibold{% endif %}">
+              <li class="{% if m.status == 'removed' %}text-muted text-decoration-line-through{% elif m.status == 'added' %}text-warning{% endif %}">
                 {% if m.status == 'added' %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i> {% endif %}{{ m.name }}
               </li>
               {% empty %}
@@ -122,13 +127,13 @@
   </div>
   {% if result.has_fast %}
   <div class="col-6">
-    <div class="text-muted small text-uppercase mb-1">{% trans "Fast polling" %}</div>
+    <div class="fw-semibold text-uppercase mb-2"><i class="mdi mdi-rabbit" aria-hidden="true"></i> {% trans "Fast polling" %}</div>
     <table class="table table-sm mb-0">
       <tbody>
         <tr>
           <th>{% trans "Interval" %}</th>
           <td>
-            <span class="{% if result.polling_interval_fast %}text-warning fw-semibold{% endif %}">
+            <span class="{% if result.polling_interval_fast %}text-warning{% endif %}">
               {% if result.polling_interval_fast %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
               {{ result.resolved_interval_fast|default:"—" }}
             </span>
@@ -137,7 +142,7 @@
         <tr>
           <th>{% trans "Timeout" %}</th>
           <td>
-            <span class="{% if result.polling_timeout_fast %}text-warning fw-semibold{% endif %}">
+            <span class="{% if result.polling_timeout_fast %}text-warning{% endif %}">
               {% if result.polling_timeout_fast %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i>{% endif %}
               {{ result.resolved_timeout_fast|default:"—" }}
             </span>
@@ -148,7 +153,7 @@
           <td>
             <ul class="list-unstyled mb-0">
               {% for m in result.fast_module_diff %}
-              <li class="{% if m.status == 'removed' %}text-muted text-decoration-line-through{% elif m.status == 'added' %}text-warning fw-semibold{% endif %}">
+              <li class="{% if m.status == 'removed' %}text-muted text-decoration-line-through{% elif m.status == 'added' %}text-warning{% endif %}">
                 {% if m.status == 'added' %}<i class="mdi mdi-star-four-points" aria-hidden="true"></i> {% endif %}{{ m.name }}
               </li>
               {% empty %}

@@ -365,18 +365,58 @@ def _module_diff(previous, final):
     ]
 
 
+def _module_rows(result):
+    """test_results only covers modules that were actually SNMP-probed — a module
+    added unconditionally (mandatory per rule config) never gets tested, so it
+    would otherwise vanish from the table despite being part of the final set.
+    Returns test_results (tagged tested=True) plus a synthetic, untested row for
+    each such module. Trusts a "profile" field set by the modulator itself when
+    present; falls back to inferring it from module-set membership for
+    modulator versions that don't set it yet."""
+    final_fast = set(result.get("final_modules_fast") or [])
+    previous_fast = set(result.get("previous_modules_fast") or [])
+
+    def _profile(module_name, given):
+        return given or ("fast" if module_name in final_fast or module_name in previous_fast else "normal")
+
+    tested = [
+        dict(t, tested=True, profile=_profile(t.get("module"), t.get("profile")))
+        for t in (result.get("test_results") or [])
+    ]
+    tested_names = {t["module"] for t in tested}
+    final_all = set(result.get("final_modules") or []) | final_fast
+    mandatory = [
+        {
+            "module": m, "useful": None, "metric_count": None, "duration_seconds": None, "error": None,
+            "tested": False, "profile": _profile(m, None),
+        }
+        for m in sorted(final_all - tested_names)
+    ]
+    return tested + mandatory
+
+
 def _annotate_probe_result(result):
     """Add template-friendly derived flags to a ModulationResult dict in place:
     has_fast (whether the fast polling profile applies to this device at all),
     fast_changed (its module set differs from before), the merged module diffs,
-    and pending (whether there's anything at all for a follow-up commit to write)."""
-    fast_changed = result.get("previous_modules_fast") != result.get("final_modules_fast")
-    result["has_fast"] = bool(
-        result.get("previous_modules_fast") or result.get("final_modules_fast") or result.get("resolved_interval_fast")
-    )
+    module_rows (test_results plus untested-but-mandatory modules), and pending
+    (whether there's anything at all for a follow-up commit to write). Prefers
+    fast_profile_enabled/changed_fast straight from the API when the modulator
+    sets them, falling back to inference for older modulator versions."""
+    has_fast = result.get("fast_profile_enabled")
+    if has_fast is None:
+        has_fast = bool(
+            result.get("previous_modules_fast") or result.get("final_modules_fast") or result.get("resolved_interval_fast")
+        )
+    fast_changed = result.get("changed_fast")
+    if fast_changed is None:
+        fast_changed = result.get("previous_modules_fast") != result.get("final_modules_fast")
+
+    result["has_fast"] = has_fast
     result["fast_changed"] = fast_changed
     result["normal_module_diff"] = _module_diff(result.get("previous_modules"), result.get("final_modules"))
     result["fast_module_diff"] = _module_diff(result.get("previous_modules_fast"), result.get("final_modules_fast"))
+    result["module_rows"] = _module_rows(result)
     result["pending"] = any([
         result.get("changed"),
         result.get("auth_changed"),
