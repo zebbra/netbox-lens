@@ -1,4 +1,6 @@
+import logging
 import operator
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import reduce
 
@@ -33,6 +35,8 @@ except ImportError:
     NbInterface = None
 
 MAX_MACARP_ROWS = 500
+
+logger = logging.getLogger(__name__)
 
 
 def _device_ip(device):
@@ -327,12 +331,32 @@ class LensRebuildInventoryView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/rebuild_modal.html", context)
 
 
+def _run_rebuild_now(config, ip):
+    """Runs in a background thread — discobox's /rebuild has no async mode, and
+    blocking the request for the ~2-3 minutes a rebuild takes defeats the point
+    of a no-preview button. The outcome isn't shown to the user; it's only
+    logged, since there's no request left to attach a message to by the time
+    this finishes."""
+    ok, data, error = rebuild_inventory(config, ip, dry_run=False)
+    ok, error = _interpret_rebuild_result(ok, data, error)
+    if not ok:
+        logger.warning("Rebuild Now failed for %s: %s", ip, error)
+    else:
+        prune = (data or {}).get("prune") or {}
+        deleted = sum(
+            prune.get(k) or 0
+            for k in ("interfaces_deleted", "modules_deleted", "inventory_deleted", "sfps_deleted")
+        )
+        logger.info("Rebuild Now completed for %s — %d item(s) deleted.", ip, deleted)
+
+
 class LensRebuildNowView(PermissionRequiredMixin, View):
     """Applies a rebuild immediately (dry_run=false), skipping the preview modal —
     a plain form post + message banner like Discover/Macsuck/Arpnip, for people
-    who don't want to click through a preview first. discobox's /rebuild has no
-    async mode, so this still blocks for the duration of the reconcile — it just
-    doesn't tie up a modal/spinner in the UI while it runs."""
+    who don't want to click through a preview first. Fires in a background
+    thread and returns instantly rather than blocking on discobox's ~2-3 minute
+    synchronous /rebuild call — the outcome isn't known at click time, only
+    logged server-side (see _run_rebuild_now)."""
     permission_required = "netbox_lens.trigger_lens"
 
     def post(self, request, pk):
@@ -343,18 +367,12 @@ class LensRebuildNowView(PermissionRequiredMixin, View):
             return redirect(device.get_absolute_url())
 
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
-        ok, data, error = rebuild_inventory(config, ip, dry_run=False)
-        ok, error = _interpret_rebuild_result(ok, data, error)
-        if not ok:
-            messages.error(request, error)
-        else:
-            prune = (data or {}).get("prune") or {}
-            deleted = sum(
-                prune.get(k) or 0
-                for k in ("interfaces_deleted", "modules_deleted", "inventory_deleted", "sfps_deleted")
-            )
-            messages.success(request, f"Rebuild applied for {ip} — {deleted} item(s) deleted.")
-
+        threading.Thread(target=_run_rebuild_now, args=(config, ip), daemon=True).start()
+        messages.info(
+            request,
+            f"Rebuild request sent for {ip} — this can take a few minutes; "
+            "check back on this device's inventory afterward.",
+        )
         return redirect(device.get_absolute_url())
 
 
