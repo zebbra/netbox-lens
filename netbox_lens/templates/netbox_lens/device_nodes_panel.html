@@ -14,9 +14,17 @@
             hx-post="{% url 'plugins:netbox_lens:rebuild_inventory' pk=lens_device_pk %}"
             hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
             hx-vals='{"dry_run": "true"}'
-            hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-trigger="click once">
-      <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Rebuild Inventory" %}
+            hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-trigger="click once"
+            title="{% trans 'Preview what a rebuild would change — nothing is persisted.' %}">
+      <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Preview Rebuild" %}
     </button>
+    <form method="post" action="{% url 'plugins:netbox_lens:rebuild_now' pk=lens_device_pk %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-danger py-0 px-2"
+              title="{% trans 'Rebuilds immediately — no preview, deletes stale interfaces/modules/inventory right away. Can take a few minutes; you\'ll get a message when it\'s done.' %}">
+        <i class="mdi mdi-delete-alert" aria-hidden="true"></i> {% trans "Rebuild Now" %}
+      </button>
+    </form>
     {% endif %}
   </div>
   <div class="card-body">
@@ -170,9 +178,16 @@
                       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                       hx-vals='{"dry_run": "true"}'
                       hx-target="#lens-probe-body" hx-swap="innerHTML" hx-trigger="click once"
-                      title="{% trans 'Probes the device\'s SNMP reachability directly (contacts the device).' %}">
-                <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Probe" %}
+                      title="{% trans 'Probes the device\'s SNMP reachability and previews the module/polling config — nothing is persisted.' %}">
+                <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Preview" %}
               </button>
+              <form method="post" action="{% url 'plugins:netbox_lens:update_modules' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-primary py-0 px-2"
+                        title="{% trans 'Applies the SNMP module/polling config immediately — no preview. Queued in the background; you\'ll get a message when it\'s done.' %}">
+                  <i class="mdi mdi-content-save-check" aria-hidden="true"></i> {% trans "Update Modules" %}
+                </button>
+              </form>
               {% endif %}
             </td>
           </tr>

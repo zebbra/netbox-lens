@@ -185,6 +185,7 @@
       <tr>
         <td>{% trans "Liveness" %}</td>
         <td class="text-end">
+          {% if stats.liveness %}
           {% if stats.liveness.ok %}
           <span class="badge text-bg-success">{% trans "ok" %}</span>
           {% else %}
@@ -192,6 +193,9 @@
           {% endif %}
           {{ stats.liveness.devices }} {% trans "devices" %}
           <span class="text-muted small" title="{{ stats.liveness.checked|lens_absolute }}">({{ stats.liveness.checked|lens_relative }})</span>
+          {% else %}
+          <span class="text-muted">{% trans "not yet checked" %}</span>
+          {% endif %}
         </td>
       </tr>
       {% endif %}

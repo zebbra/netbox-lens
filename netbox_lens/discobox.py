@@ -1,6 +1,6 @@
 import requests
 
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = 180
 
 
 def rebuild_inventory(config, device_ip, dry_run=True):

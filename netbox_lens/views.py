@@ -291,6 +291,22 @@ class LensTriggerJobView(PermissionRequiredMixin, View):
         return redirect(device.get_absolute_url())
 
 
+def _interpret_rebuild_result(ok, data, error):
+    """discobox reports its own failures as HTTP 200 with status="error"/"skipped"
+    rather than an HTTP error, so a transport-level success isn't enough here."""
+    data = data or {}
+    if ok and data.get("status") == "error":
+        error = data.get("reason") or (
+            "Discobox could not rebuild this device — Netdisco has no record of it "
+            "(not discovered yet, or unreachable)."
+        )
+        ok = False
+    elif ok and data.get("status") == "skipped":
+        error = f"Rebuild skipped: {data.get('reason') or 'sync is paused or already in progress'}."
+        ok = False
+    return ok, error
+
+
 class LensRebuildInventoryView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.trigger_lens"
 
@@ -305,20 +321,41 @@ class LensRebuildInventoryView(PermissionRequiredMixin, View):
         else:
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
             ok, data, error = rebuild_inventory(config, ip, dry_run=dry_run)
-            # discobox reports its own failures as HTTP 200 with status="error"/"skipped"
-            # rather than an HTTP error, so a transport-level success isn't enough here.
-            if ok and data.get("status") == "error":
-                error = data.get("reason") or (
-                    "Discobox could not rebuild this device — Netdisco has no record of it "
-                    "(not discovered yet, or unreachable)."
-                )
-                ok = False
-            elif ok and data.get("status") == "skipped":
-                error = f"Rebuild skipped: {data.get('reason') or 'sync is paused or already in progress'}."
-                ok = False
+            ok, error = _interpret_rebuild_result(ok, data, error)
             context.update({"ok": ok, "data": data, "error": error})
 
         return render(request, "netbox_lens/rebuild_modal.html", context)
+
+
+class LensRebuildNowView(PermissionRequiredMixin, View):
+    """Applies a rebuild immediately (dry_run=false), skipping the preview modal —
+    a plain form post + message banner like Discover/Macsuck/Arpnip, for people
+    who don't want to click through a preview first. discobox's /rebuild has no
+    async mode, so this still blocks for the duration of the reconcile — it just
+    doesn't tie up a modal/spinner in the UI while it runs."""
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        if not ip:
+            messages.error(request, "This device has no primary IPv4 address.")
+            return redirect(device.get_absolute_url())
+
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
+        ok, data, error = rebuild_inventory(config, ip, dry_run=False)
+        ok, error = _interpret_rebuild_result(ok, data, error)
+        if not ok:
+            messages.error(request, error)
+        else:
+            prune = (data or {}).get("prune") or {}
+            deleted = sum(
+                prune.get(k) or 0
+                for k in ("interfaces_deleted", "modules_deleted", "inventory_deleted", "sfps_deleted")
+            )
+            messages.success(request, f"Rebuild applied for {ip} — {deleted} item(s) deleted.")
+
+        return redirect(device.get_absolute_url())
 
 
 class LensSyncView(PermissionRequiredMixin, View):
@@ -450,6 +487,36 @@ class LensProbeView(PermissionRequiredMixin, View):
             context.update({"ok": ok, "status_code": status_code, "data": data, "error": error})
 
         return render(request, "netbox_lens/probe_modal.html", context)
+
+
+class LensUpdateModulesView(PermissionRequiredMixin, View):
+    """Applies the SNMP module/polling config immediately (dry_run=false,
+    wait=false), skipping the preview modal — a plain form post + message
+    banner like Discover/Macsuck/Arpnip. wait=false queues it in the
+    background and returns instantly, so this is genuinely non-blocking,
+    unlike Rebuild Now."""
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        if not ip:
+            messages.error(request, "This device has no primary IPv4 address.")
+            return redirect(device.get_absolute_url())
+
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
+        ok, status_code, data, error = snmp_modulator_probe(config, ip, dry_run=False, wait=False)
+        data = data or {}
+        if not ok:
+            messages.error(request, error or "SNMP Modulator request failed.")
+        elif status_code == 202 and data.get("status") == "queued":
+            messages.success(request, f"Module update queued for {ip}.")
+        elif status_code == 202:
+            messages.warning(request, f"Module update skipped for {ip}: {data.get('reason', 'already in progress')}.")
+        else:
+            messages.error(request, f"Unexpected response from SNMP Modulator (HTTP {status_code}).")
+
+        return redirect(device.get_absolute_url())
 
 
 class LensMacHistoryView(PermissionRequiredMixin, View):
