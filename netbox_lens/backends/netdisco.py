@@ -504,21 +504,30 @@ class NetdiscoBackend(LensBackend):
         if not base_url:
             s.error = "Netdisco URL is not configured."
             return s
+        url = f"{base_url}/api/v1/statistics"
+        token = os.environ.get("LENS_NETDISCO_TOKEN", self.config.get("token", ""))
+        if not token:
+            s.error = f"LENS_NETDISCO_TOKEN is not set — no token to authenticate against {url}."
+            return s
         try:
             resp = requests.get(
-                f"{base_url}/api/v1/statistics",
-                headers={"Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}"},
+                url,
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=self.config.get("timeout", 15),
                 verify=self.config.get("verify_ssl", True),
             )
             resp.raise_for_status()
             s.stats = resp.json()
         except requests.ConnectionError:
-            s.error = "Could not reach Netdisco."
+            s.error = f"Could not reach Netdisco at {url}."
         except requests.Timeout:
-            s.error = "Netdisco did not respond in time."
+            s.error = f"Netdisco did not respond in time ({url})."
         except requests.HTTPError as e:
-            s.error = f"HTTP {e.response.status_code}"
+            status = e.response.status_code
+            if status in (401, 403):
+                s.error = f"HTTP {status} from {url} — LENS_NETDISCO_TOKEN was rejected (missing, expired, or IP-restricted)."
+            else:
+                s.error = f"HTTP {status} from {url}."
         except Exception as e:
             s.error = str(e)
         return s
