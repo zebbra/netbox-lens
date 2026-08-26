@@ -7,7 +7,7 @@
     <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
     <strong>LENS</strong>
     <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
-       title="{% trans 'Endpoint and neighbor data comes directly from Netdisco. Discobox syncs Netdisco\'s inventory (interfaces, modules, tags) into NetBox. SNMP Modulator resolves and writes each device\'s SNMP polling config (modules, auth profile, intervals) into NetBox custom fields.' %}"></i>
+       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox. SNMP Modulator: writes polling config.' %}"></i>
   </div>
   <div class="card-body">
     {% if lens_found %}
@@ -37,7 +37,7 @@
       <div class="col-6">
         <table class="table table-hover attr-table table-sm mb-2">
           <tr>
-            <th scope="row">{% trans "Linked IP" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Linked IP" %}</th>
             <td>
               {{ lens_device_ip }}
               {% for label, url in lens_web_links %}
@@ -47,13 +47,13 @@
           </tr>
           {% for label, summary in lens_summaries %}
           {% if summary.model %}
-          <tr><th scope="row">{% trans "Model" %}</th><td>{{ summary.model }}</td></tr>
+          <tr><th scope="row" class="text-nowrap">{% trans "Model" %}</th><td>{{ summary.model }}</td></tr>
           {% endif %}
           {% if summary.os %}
-          <tr><th scope="row">{% trans "OS" %}</th><td>{{ summary.os }}</td></tr>
+          <tr><th scope="row" class="text-nowrap">{% trans "OS" %}</th><td>{{ summary.os }}</td></tr>
           {% endif %}
           {% if summary.os_ver %}
-          <tr><th scope="row">{% trans "Release" %}</th><td>{{ summary.os_ver }}</td></tr>
+          <tr><th scope="row" class="text-nowrap">{% trans "Release" %}</th><td>{{ summary.os_ver }}</td></tr>
           {% endif %}
           {% endfor %}
         </table>
@@ -63,21 +63,21 @@
           {% for label, summary in lens_summaries %}
           {% if summary.first_discovered %}
           <tr>
-            <th scope="row">{% trans "First discovered" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "First discovered" %}</th>
             <td><span title="{{ summary.first_discovered|lens_absolute }}">{{ summary.first_discovered|lens_relative }}</span></td>
             <td></td>
           </tr>
           {% endif %}
           {% if "last_discover" in summary %}
           <tr>
-            <th scope="row">{% trans "Last discover" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Last discover" %}</th>
             <td><span title="{{ summary.last_discover|lens_absolute }}">{{ summary.last_discover|lens_relative|default:"—" }}</span></td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:discover' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
-                        title="{% trans 'Schedules a job in Netdisco to rediscover this device — fetches fresh data from the device itself (SNMP).' %}">
+                        title="{% trans 'Rediscover via SNMP' %}">
                   <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Discover" %}
                 </button>
               </form>
@@ -87,14 +87,14 @@
           {% endif %}
           {% if "last_macsuck" in summary %}
           <tr>
-            <th scope="row">{% trans "Last macsuck" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Last macsuck" %}</th>
             <td><span title="{{ summary.last_macsuck|lens_absolute }}">{{ summary.last_macsuck|lens_relative|default:"—" }}</span></td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:macsuck' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
-                        title="{% trans 'Schedules a job in Netdisco to fetch the MAC address table from the device itself (SNMP).' %}">
+                        title="{% trans 'Fetch MAC table via SNMP' %}">
                   <i class="mdi mdi-table-network" aria-hidden="true"></i> {% trans "Macsuck" %}
                 </button>
               </form>
@@ -104,14 +104,14 @@
           {% endif %}
           {% if "last_arpnip" in summary %}
           <tr>
-            <th scope="row">{% trans "Last arpnip" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Last arpnip" %}</th>
             <td><span title="{{ summary.last_arpnip|lens_absolute }}">{{ summary.last_arpnip|lens_relative|default:"—" }}</span></td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:arpnip' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
-                        title="{% trans 'Schedules a job in Netdisco to fetch the ARP table from the device itself (SNMP).' %}">
+                        title="{% trans 'Fetch ARP table via SNMP' %}">
                   <i class="mdi mdi-lan-connect" aria-hidden="true"></i> {% trans "Arpnip" %}
                 </button>
               </form>
@@ -121,20 +121,20 @@
           {% endif %}
           {% endfor %}
           <tr>
-            <th scope="row">{% trans "Bossy" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Bossy" %}</th>
             <td><span title="{{ lens_bossy_last_updated|lens_absolute }}">{{ lens_bossy_last_updated|lens_relative|default:"—" }}</span></td>
             <td></td>
           </tr>
           <tr>
-            <th scope="row">{% trans "Netdisco" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Netdisco" %}</th>
             <td><span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative|default:"—" }}</span></td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <form method="post" action="{% url 'plugins:netbox_lens:sync' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
                 <input type="hidden" name="force" value="false">
                 <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2"
-                        title="{% trans 'Sync data from Netdisco to NetBox — database to database, does not contact the device.' %}">
+                        title="{% trans 'Sync Netdisco → NetBox (DB only)' %}">
                   <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Sync" %}
                 </button>
               </form>
@@ -143,7 +143,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="force" value="true">
                 <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2"
-                        title="{% trans 'Force sync data from Netdisco to NetBox, bypassing the cooldown — database to database, does not contact the device. Admin only.' %}">
+                        title="{% trans 'Force sync, skip cooldown (admin)' %}">
                   <i class="mdi mdi-sync-alert" aria-hidden="true"></i>
                 </button>
               </form>
@@ -152,9 +152,9 @@
             </td>
           </tr>
           <tr>
-            <th scope="row">{% trans "Inventory" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Inventory" %}</th>
             <td class="text-muted">—</td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-bs-toggle="modal"
                       data-bs-target="#lens-rebuild-modal"
@@ -162,23 +162,23 @@
                       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                       hx-vals='{"dry_run": "true"}'
                       hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-trigger="click once"
-                      title="{% trans 'Preview what a rebuild would change — nothing is persisted.' %}">
-                <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Preview Rebuild" %}
+                      title="{% trans 'Preview — dry run, nothing applied' %}">
+                <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Rebuild Inventory" %}
               </button>
               <form method="post" action="{% url 'plugins:netbox_lens:rebuild_now' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-danger py-0 px-2"
-                        title="{% trans 'Rebuilds immediately — no preview, deletes stale interfaces/modules/inventory right away. Sent in the background and takes a few minutes; check back on the inventory afterward, no completion message is shown.' %}">
-                  <i class="mdi mdi-delete-alert" aria-hidden="true"></i> {% trans "Rebuild Now" %}
+                <button type="submit" class="btn btn-sm btn-danger py-0 px-1"
+                        title="{% trans 'Apply now — runs in background' %}">
+                  <i class="mdi mdi-delete-alert" aria-hidden="true"></i>
                 </button>
               </form>
               {% endif %}
             </td>
           </tr>
           <tr>
-            <th scope="row">{% trans "SNMP Modulator" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "SNMP Modulator" %}</th>
             <td><span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative|default:"—" }}</span></td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
                       data-bs-target="#lens-probe-modal"
@@ -186,14 +186,14 @@
                       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                       hx-vals='{"dry_run": "true"}'
                       hx-target="#lens-probe-body" hx-swap="innerHTML" hx-trigger="click once"
-                      title="{% trans 'Probes the device\'s SNMP reachability and previews the module/polling config — nothing is persisted.' %}">
+                      title="{% trans 'Preview — dry run, nothing applied' %}">
                 <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Preview" %}
               </button>
               <form method="post" action="{% url 'plugins:netbox_lens:update_modules' pk=lens_device_pk %}" class="d-inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-primary py-0 px-2"
-                        title="{% trans 'Applies the SNMP module/polling config immediately — no preview. Queued in the background; you\'ll get a message when it\'s done.' %}">
-                  <i class="mdi mdi-content-save-check" aria-hidden="true"></i> {% trans "Update Modules" %}
+                <button type="submit" class="btn btn-sm btn-primary py-0 px-1"
+                        title="{% trans 'Apply now — runs in background' %}">
+                  <i class="mdi mdi-content-save-check" aria-hidden="true"></i>
                 </button>
               </form>
               {% endif %}

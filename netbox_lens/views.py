@@ -692,6 +692,10 @@ class LensNacStatusView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/nac_status.html", context)
 
 
+def _is_switch_or_router(device):
+    return bool(device.role) and device.role.slug in ("switch", "router")
+
+
 if NbDevice:
     @register_model_view(NbDevice, name="lens_macarp", path="lens-mac-arp")
     class DeviceMacArpView(ObjectView):
@@ -699,7 +703,8 @@ if NbDevice:
         additional_permissions = ["netbox_lens.use_lens"]
         template_name = "netbox_lens/device_macarp.html"
         tab = ViewTab(
-            label="MAC",
+            label="IP/MAC Table",
+            visible=_is_switch_or_router,
             permission="netbox_lens.use_lens",
         )
 
