@@ -56,7 +56,7 @@
           <th>{% trans "If oper." %}</th>
           <th>{% trans "Type" %}</th>
           <th>{% trans "PoE type" %}</th>
-          <th>{% trans "Updated" %}</th>
+          <th>{% if page_title == "Down Ports" %}{% trans "Down Since" %}{% else %}{% trans "Updated" %}{% endif %}</th>
           <th></th>
         </tr>
         <tr>

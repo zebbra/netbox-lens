@@ -1,3 +1,4 @@
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
@@ -45,6 +46,19 @@ def _format_speed(kbps):
     return f"{kbps / 1_000:.1f} MBit/s"
 
 
+def _natural_sort_key(name):
+    """Splits a name on its digit runs and converts those to ints, so e.g.
+    "Gi1/0/10" sorts after "Gi1/0/9" instead of before it (plain string sort
+    puts "10" before "9"). Each segment is tagged (0, int) or (1, str) so
+    names with differently-shaped segments (e.g. "Vlan10" vs a bare "1/1/1"
+    stack-member name) never compare an int against a str and blow up.
+    """
+    return [
+        (0, int(part)) if part.isdigit() else (1, part.lower())
+        for part in re.split(r'(\d+)', name or "")
+    ]
+
+
 def grafana_url(template, device_name, interface_name):
     if not template or not device_name or not interface_name:
         return None
@@ -90,6 +104,9 @@ def build_interface_list(
     interfaces = list(qs[:MAX_SCAN + 1])
     scan_truncated = len(interfaces) > MAX_SCAN
     interfaces = interfaces[:MAX_SCAN]
+    # DB-level ordering above is a plain string sort ("Gi1/0/10" before
+    # "Gi1/0/2") — re-sort what we actually kept for a sane display order.
+    interfaces.sort(key=lambda i: (i.device.name.lower(), _natural_sort_key(i.name)))
 
     rows = []
     for iface in interfaces:
