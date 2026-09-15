@@ -51,12 +51,15 @@
               {% elif row.pae_enabled %}{% trans "yes" %}
               {% else %}{% trans "no" %}{% endif %}
             </td>
-            <td><code>{{ row.port }}</code></td>
+            <td><code class="lens-copy" data-value="{{ row.port }}">{{ row.port }}</code></td>
             <td>{{ row.descr|default:"—" }}</td>
             <td>{{ row.authconfig_state|default:"—" }}</td>
             <td>{{ row.port_control|default:"—" }}</td>
             <td>{{ row.port_status|default:"—" }}</td>
-            <td>{{ row.user|default:"—" }}</td>
+            <td>
+              {% if row.user %}<code class="lens-copy" data-value="{{ row.user }}">{{ row.user }}</code>
+              {% else %}—{% endif %}
+            </td>
             <td>
               {% if row.mab is None %}—
               {% elif row.mab %}{% trans "yes" %}
@@ -72,7 +75,10 @@
               {% elif row.is_supplicant %}{% trans "yes" %}
               {% else %}{% trans "no" %}{% endif %}
             </td>
-            <td>{{ row.last_eapol_source|default:"—" }}</td>
+            <td>
+              {% if row.last_eapol_source %}<code class="lens-copy" data-value="{{ row.last_eapol_source }}">{{ row.last_eapol_source }}</code>
+              {% else %}—{% endif %}
+            </td>
           </tr>
           {% empty %}
           <tr><td colspan="12" class="text-muted">{% trans "No matching ports found." %}</td></tr>
@@ -115,4 +121,31 @@
   </div>
   {% endif %}
 {% endif %}
+
+<style>code.lens-copy { cursor: pointer; border-radius: 3px; }</style>
+<script>
+(function () {
+  if (window._lenscopying) return;
+  window._lenscopying = true;
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('code.lens-copy');
+    if (!el) return;
+    var val = el.dataset.value || el.textContent.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).catch(function () {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = val; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    el.style.outline = '2px solid #2bd9a8';
+    el.style.transition = 'outline-color .4s';
+    setTimeout(function () {
+      el.style.outlineColor = 'transparent';
+      setTimeout(function () { el.style.outline = ''; el.style.transition = ''; }, 450);
+    }, 600);
+  });
+}());
+</script>
 {% endblock %}
