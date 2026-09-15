@@ -772,7 +772,7 @@ class LensNacStatusView(PermissionRequiredMixin, View):
                     backends,
                     device_query=form.cleaned_data.get("device"),
                     interface_query=form.cleaned_data.get("interface") or None,
-                    hide_disconnected=form.cleaned_data.get("hide_disconnected"),
+                    show_disconnected=form.cleaned_data.get("show_disconnected"),
                 )
                 context.update({
                     "rows": rows,

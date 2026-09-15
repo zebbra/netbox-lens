@@ -285,9 +285,14 @@ class NacStatusForm(forms.Form):
             "autocomplete": "off",
         }),
     )
-    hide_disconnected = forms.BooleanField(
-        label="Hide disconnected",
+    # Opt-in (not opt-out): unchecked checkboxes aren't submitted at all, so
+    # Django can't tell "explicitly unchecked" from "not in this request" —
+    # any link/reload without the param would silently reset an opt-out
+    # "hide_disconnected" default back to False. Defaulting this to False
+    # (hide disconnected) needs no special-casing since that's just what an
+    # absent/unchecked checkbox already means.
+    show_disconnected = forms.BooleanField(
+        label="Show disconnected",
         required=False,
-        initial=True,
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
