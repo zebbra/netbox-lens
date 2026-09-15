@@ -1,0 +1,21 @@
+{% load i18n %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>LENS</strong>
+  </div>
+  <div class="card-body d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:interface_search' %}?device={{ lens_device_name|urlencode }}">
+      <i class="mdi mdi-ethernet" aria-hidden="true"></i> {% trans "Default" %}
+    </a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:down_ports' %}?device={{ lens_device_name|urlencode }}">
+      <i class="mdi mdi-lan-disconnect" aria-hidden="true"></i> {% trans "Down Ports" %}
+    </a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:mac_history' %}?device={{ lens_device_name|urlencode }}">
+      <i class="mdi mdi-history" aria-hidden="true"></i> {% trans "MAC History" %}
+    </a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ lens_device_name|urlencode }}">
+      <i class="mdi mdi-shield-search" aria-hidden="true"></i> {% trans "NAC Status" %}
+    </a>
+  </div>
+</div>

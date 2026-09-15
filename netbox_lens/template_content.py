@@ -114,6 +114,13 @@ def _device_ip(device):
 class DeviceLensPanel(PluginTemplateExtension):
     models = ["dcim.device"]
 
+    def left_page(self):
+        if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
+            return ""
+        return self.render("netbox_lens/device_search_links.html", extra_context={
+            "lens_device_name": self.context["object"].name,
+        })
+
     def right_page(self):
         if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
             return ""
