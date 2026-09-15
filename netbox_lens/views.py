@@ -23,6 +23,7 @@ from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
+from .victoria_metrics import fetch_interface_updown_state
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
@@ -136,8 +137,38 @@ def _enrich_mac_history(rows):
             r["nb_device_url"] = d.get_absolute_url()
             r["area"] = d.cf.get("service_group")
             r["device_name"] = r.get("device_name") or d.name
+            r["device_id"] = d.pk
             if r.get("port"):
                 r["nb_interface_url"] = iface_map.get((d.pk, r["port"]))
+
+
+def _apply_active_now(rows, vm_config):
+    """Overlay an "active now" (oper=up) flag onto mac-history rows via a
+    single bulk VictoriaMetrics query — same source and no-fan-out approach
+    as Down-Ports' oper status (see interface_search.apply_vm_oper_status).
+
+    Leaves active_now=None (rendered as "—") when VM has no data for that
+    device+port, rather than guessing "down" — a miss can mean the port is
+    admin-down, or the device isn't covered by the SNMP module yet.
+    """
+    if not vm_config or not vm_config.get("url"):
+        return
+    device_ids = {str(r["device_id"]) for r in rows if r.get("device_id")}
+    if not device_ids:
+        return
+    try:
+        status, _ = fetch_interface_updown_state(
+            vm_config["url"],
+            device_ids,
+            timeout=vm_config.get("timeout", 10),
+            verify_tls=vm_config.get("verify_ssl", True),
+        )
+    except Exception:
+        return
+    for r in rows:
+        data = status.get((str(r.get("device_id")), r.get("port")))
+        if data:
+            r["active_now"] = data["oper"] == "up"
 
 
 def _enrich_arp_history(rows):
@@ -585,6 +616,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                     date_to=form.cleaned_data.get("date_to"),
                 )
                 _enrich_mac_history(rows)
+                _apply_active_now(rows, config.get("victoria_metrics", {}))
                 if request.GET.get("export") == "csv":
                     return _csv_response(
                         "mac_history.csv",
@@ -595,6 +627,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                             ("VLAN", lambda r: r.get("vlan")),
                             ("Client IP", lambda r: r.get("client_ip")),
                             ("Client Name", lambda r: r.get("client_name")),
+                            ("Active Now", lambda r: r.get("active_now")),
                             ("Area", lambda r: r.get("area")),
                             ("First Seen", lambda r: r.get("time_first")),
                             ("Last Seen", lambda r: r.get("time_last")),

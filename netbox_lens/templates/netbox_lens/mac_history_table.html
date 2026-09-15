@@ -24,6 +24,7 @@
         <th>{% trans "VLAN" %}</th>
         <th>{% trans "Client IP" %}</th>
         <th>{% trans "Client Name" %}</th>
+        <th>{% trans "Active Now" %}</th>
         {% if not hide_device_area %}
         <th>{% trans "Area" %}</th>
         {% endif %}
@@ -61,6 +62,11 @@
           {% if row.client_name %}<code class="lens-copy" data-value="{{ row.client_name }}">{{ row.client_name }}</code>
           {% else %}—{% endif %}
         </td>
+        <td>
+          {% if row.active_now is None %}—
+          {% elif row.active_now %}{% trans "yes" %}
+          {% else %}{% trans "no" %}{% endif %}
+        </td>
         {% if not hide_device_area %}
         <td>{{ row.area|default:"—" }}</td>
         {% endif %}
@@ -81,7 +87,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if hide_device_area %}8{% else %}10{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr><td colspan="{% if hide_device_area %}9{% else %}11{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
