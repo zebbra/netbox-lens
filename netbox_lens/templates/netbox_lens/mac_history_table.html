@@ -29,6 +29,7 @@
         {% endif %}
         <th>{% trans "First Seen" %}</th>
         <th>{% trans "Last Seen" %}</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -65,9 +66,22 @@
         {% endif %}
         <td><span title="{{ row.time_first|lens_absolute }}">{{ row.time_first|lens_relative }}</span></td>
         <td><span title="{{ row.time_last|lens_absolute }}">{{ row.time_last|lens_relative }}</span></td>
+        <td class="text-nowrap">
+          {% if row.mac %}
+          <a href="{% url 'plugins:netbox_lens:arp_history' %}?mac={{ row.mac|urlencode }}" title="{% trans 'View in ARP History' %}">
+            <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i>
+          </a>
+          {% endif %}
+          {% if row.device_name and row.port %}
+          <a href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ row.device_name|urlencode }}&interface={{ row.port|urlencode }}"
+             title="{% trans 'View NAC Status' %}" class="ms-2">
+            <i class="mdi mdi-shield-search" aria-hidden="true"></i>
+          </a>
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if hide_device_area %}7{% else %}9{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr><td colspan="{% if hide_device_area %}8{% else %}10{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

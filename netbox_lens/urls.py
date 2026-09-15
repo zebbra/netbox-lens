@@ -11,7 +11,12 @@ urlpatterns = [
     path("interfaces/", views.LensInterfaceSearchView.as_view(), name="interface_search"),
     path(
         "down-ports/",
-        views.LensInterfaceSearchView.as_view(page_title="Down Ports", default_filters={"admin": "down"}),
+        # Down Ports means "should be up but isn't": admin-enabled (NetBox)
+        # yet operationally down (VictoriaMetrics interfaceUpDownState) —
+        # not NetBox's admin=down, which is just administratively disabled.
+        views.LensInterfaceSearchView.as_view(
+            page_title="Down Ports", default_filters={"admin": "up", "oper": "down"}
+        ),
         name="down_ports",
     ),
     path("nac-status/", views.LensNacStatusView.as_view(), name="nac_status"),

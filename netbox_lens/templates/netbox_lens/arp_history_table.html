@@ -19,6 +19,7 @@
         <th>{% trans "Area" %}</th>
         <th>{% trans "First Seen" %}</th>
         <th>{% trans "Last Seen" %}</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -44,9 +45,16 @@
         <td>{{ row.area|default:"—" }}</td>
         <td><span title="{{ row.time_first|lens_absolute }}">{{ row.time_first|lens_relative }}</span></td>
         <td><span title="{{ row.time_last|lens_absolute }}">{{ row.time_last|lens_relative }}</span></td>
+        <td class="text-nowrap">
+          {% if row.mac %}
+          <a href="{% url 'plugins:netbox_lens:mac_history' %}?mac={{ row.mac|urlencode }}" title="{% trans 'View in MAC History' %}">
+            <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i>
+          </a>
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
-      <tr><td colspan="8" class="text-muted">{% trans "No matching entries found." %}</td></tr>
+      <tr><td colspan="9" class="text-muted">{% trans "No matching entries found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

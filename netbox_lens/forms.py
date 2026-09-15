@@ -249,6 +249,14 @@ class InterfaceSearchForm(forms.Form):
         required=False,
         widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
     )
+    # Sourced from VictoriaMetrics (interfaceUpDownState), not NetBox itself —
+    # NetBox only tracks admin/enabled state, not operational state.
+    oper = forms.ChoiceField(
+        label="If oper.",
+        choices=ADMIN_CHOICES,
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
+    )
 
     def clean(self):
         cleaned = super().clean()

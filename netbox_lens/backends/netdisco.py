@@ -372,6 +372,29 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
+    def device_last_discover(self, device_ip: str):
+        """Netdisco's device_port.up/up_admin are populated by its "discover"
+        poller job, not a live SNMP call — this returns that job's last-run
+        timestamp so callers can show how old the port state actually is."""
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return None
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/object/device/{device_ip}",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            return data.get("last_discover") if isinstance(data, dict) else None
+        except Exception:
+            return None
+
     def port_pae(self, device_ip: str, port: str) -> dict:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:

@@ -14,6 +14,33 @@
   (see its Filters tab).
   {% endblocktrans %}
 </div>
+{% if searched and not live %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-clock-outline" aria-hidden="true"></i>
+  {% if vm_meta.error %}
+    {% blocktrans trimmed with error=vm_meta.error %}
+    VictoriaMetrics unavailable ({{ error }}) — falling back to live Netdisco lookups for admin-up rows.
+    {% endblocktrans %}
+  {% elif vm_meta.as_of %}
+    {% trans "If oper. from VictoriaMetrics, data as of" %}
+    <span title="{{ vm_meta.as_of|lens_absolute }}">{{ vm_meta.as_of|lens_relative }}</span>.
+  {% else %}
+    {% trans "If oper. comes from VictoriaMetrics — no data returned for the rows shown below." %}
+  {% endif %}
+  {% if vm_meta.fallback_count %}
+    {% blocktrans trimmed count counter=vm_meta.fallback_count %}
+    {{ counter }} row had no VictoriaMetrics data and was refreshed live via Netdisco instead (see its clock icon for that data's age).
+    {% plural %}
+    {{ counter }} rows had no VictoriaMetrics data and were refreshed live via Netdisco instead (see their clock icons for that data's age).
+    {% endblocktrans %}
+  {% endif %}
+</div>
+{% elif searched and live %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-clock-outline" aria-hidden="true"></i>
+  {% trans "Admin/oper/VLAN fetched live from Netdisco for every row below — see each row's clock icon for how old that device's own poll data is." %}
+</div>
+{% endif %}
 <form method="get">
   <div class="table-responsive">
     <table class="table table-hover table-headings mb-0">
@@ -47,7 +74,14 @@
             {{ form.admin }}
             {% endif %}
           </th>
-          <th></th>
+          <th>
+            {% if locked_oper %}
+            <input type="hidden" name="oper" value="{{ locked_oper }}">
+            <span class="badge text-bg-secondary text-capitalize">{{ locked_oper }}</span>
+            {% else %}
+            {{ form.oper }}
+            {% endif %}
+          </th>
           <th></th>
           <th></th>
           <th></th>
@@ -57,9 +91,15 @@
                 <i class="mdi mdi-magnify" aria-hidden="true"></i> {% trans "Search" %}
               </button>
               <button type="submit" name="live" value="1" class="btn btn-outline-secondary btn-sm"
-                      title="{% trans 'Fetches live admin/oper/VLAN status from Netdisco for the devices shown below.' %}">
+                      title="{% trans 'Fallback: fetches admin/oper/VLAN status live from Netdisco instead of VictoriaMetrics, one call per device shown below (slower).' %}">
                 <i class="mdi mdi-refresh" aria-hidden="true"></i>
               </button>
+              {% if searched %}
+              <a href="?{{ request.GET.urlencode }}&export=csv" class="btn btn-outline-secondary btn-sm"
+                 title="{% trans 'Export the rows shown below as CSV.' %}">
+                <i class="mdi mdi-file-delimited-outline" aria-hidden="true"></i>
+              </a>
+              {% endif %}
             </div>
           </th>
         </tr>
@@ -75,7 +115,13 @@
             <td>{{ row.speed|default:"—" }}</td>
             <td>{{ row.managed|default:"—" }}</td>
             <td>{{ row.admin }}</td>
-            <td>{{ row.oper|default:"—" }}</td>
+            <td>
+              {{ row.oper|default:"—" }}
+              {% if row.oper_source == "netdisco" %}
+              <i class="mdi mdi-clock-outline text-muted" aria-hidden="true"
+                 title="{% trans 'Netdisco last discovery:' %} {% if row.oper_as_of %}{{ row.oper_as_of|lens_absolute }} ({{ row.oper_as_of|lens_relative }}){% else %}{% trans 'unknown' %}{% endif %}"></i>
+              {% endif %}
+            </td>
             <td>{{ row.type|default:"—" }}</td>
             <td>{{ row.poe_type|default:"—" }}</td>
             <td><span title="{{ row.updated|lens_absolute }}">{{ row.updated|lens_relative }}</span></td>

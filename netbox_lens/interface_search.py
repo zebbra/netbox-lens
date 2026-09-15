@@ -1,6 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
+from .victoria_metrics import fetch_interface_updown_state
+
 try:
     from dcim.models import Interface as NbInterface
 except ImportError:
@@ -101,6 +103,7 @@ def build_interface_list(
         if vlan_query and str(vlan) != str(vlan_query):
             continue
         rows.append({
+            "device_id": iface.device_id,
             "device_name": iface.device.name,
             "device_ip": str(iface.device.primary_ip4.address.ip) if iface.device.primary_ip4 else None,
             "nb_device_url": iface.device.get_absolute_url(),
@@ -127,6 +130,11 @@ def apply_live_status(rows, backends, vlan_query=None):
     """Overlay fresh admin/oper/vlan onto rows from Netdisco, one call per
     distinct device among the (already-filtered) rows given.
 
+    Netdisco's device_port.up/up_admin come from its own periodic "discover"
+    poller, not a live SNMP call — rows updated here get oper_source="netdisco"
+    and oper_as_of=<that job's last-run time>, so callers can show how old
+    the data actually is instead of implying it's real-time.
+
     vlan_query re-applies the VLAN post-filter now that real values have
     landed — NetBox rarely has VLAN set on its own, so the initial filter
     in build_interface_list() may have had nothing to match against yet.
@@ -138,16 +146,25 @@ def apply_live_status(rows, backends, vlan_query=None):
         return rows
 
     ports_by_device = {}
+    discover_by_device = {}
     with ThreadPoolExecutor() as executor:
-        futures = {}
+        port_futures = {}
+        discover_futures = {}
         for ip in device_ips:
             for b in backends:
-                futures[executor.submit(b.device_ports, ip)] = ip
-        for future in as_completed(futures):
-            ip = futures[future]
+                port_futures[executor.submit(b.device_ports, ip)] = ip
+                if hasattr(b, "device_last_discover"):
+                    discover_futures[executor.submit(b.device_last_discover, ip)] = ip
+        for future in as_completed(port_futures):
+            ip = port_futures[future]
             result = future.result()
             if result:
                 ports_by_device.setdefault(ip, {}).update({p["port"]: p for p in result if p.get("port")})
+        for future in as_completed(discover_futures):
+            ip = discover_futures[future]
+            result = future.result()
+            if result:
+                discover_by_device[ip] = result
 
     for row in rows:
         port_map = ports_by_device.get(row.get("device_ip"))
@@ -160,9 +177,51 @@ def apply_live_status(rows, backends, vlan_query=None):
             row["admin"] = live["up_admin"]
         if live.get("up"):
             row["oper"] = live["up"]
+            row["oper_source"] = "netdisco"
+            row["oper_as_of"] = discover_by_device.get(row.get("device_ip"))
         if live.get("vlan"):
             row["vlan"] = live["vlan"]
 
     if vlan_query:
         rows = [r for r in rows if str(r.get("vlan")) == str(vlan_query)]
     return rows
+
+
+def apply_vm_oper_status(rows, vm_config):
+    """Overlay real operational status onto rows via a single bulk
+    VictoriaMetrics query (interfaceUpDownState) covering every distinct
+    device among the rows given — no per-device fan-out, unlike
+    apply_live_status()'s Netdisco calls.
+
+    Returns a dict describing the query outcome for a page-level freshness
+    note: {"as_of": <unix ts float or None>, "error": <str or None>}.
+
+    Silently no-ops on missing config or any query failure (as_of stays
+    None, error is set), leaving rows' oper value untouched — callers should
+    treat any row still missing oper afterward as a candidate for an
+    apply_live_status() fallback.
+    """
+    meta = {"as_of": None, "error": None}
+    if not vm_config or not vm_config.get("url"):
+        meta["error"] = "not configured"
+        return meta
+    device_ids = {str(r["device_id"]) for r in rows if r.get("device_id")}
+    if not device_ids:
+        return meta
+    try:
+        status, latest_ts = fetch_interface_updown_state(
+            vm_config["url"],
+            device_ids,
+            timeout=vm_config.get("timeout", 10),
+            verify_tls=vm_config.get("verify_ssl", True),
+        )
+    except Exception as exc:
+        meta["error"] = str(exc)
+        return meta
+    meta["as_of"] = latest_ts
+    for row in rows:
+        data = status.get((str(row.get("device_id")), row.get("interface_name")))
+        if data:
+            row["oper"] = data["oper"]
+            row["oper_source"] = "vm"
+    return meta

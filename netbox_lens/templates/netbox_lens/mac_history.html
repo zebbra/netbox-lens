@@ -76,6 +76,11 @@
   <strong>{% trans "Configuration error" %}:</strong> {{ config_error }}
 </div>
 {% elif searched %}
+<div class="d-flex justify-content-end mb-2">
+  <a href="?{{ request.GET.urlencode }}&export=csv" class="btn btn-outline-secondary btn-sm">
+    <i class="mdi mdi-file-delimited-outline" aria-hidden="true"></i> {% trans "Export CSV" %}
+  </a>
+</div>
 {% include 'netbox_lens/mac_history_table.html' %}
 {% endif %}
 

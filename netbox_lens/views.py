@@ -1,3 +1,4 @@
+import csv
 import logging
 import operator
 import threading
@@ -9,6 +10,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from netbox.views.generic import ObjectView
@@ -20,7 +22,7 @@ from .backends import get_backends
 from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
-from .interface_search import apply_live_status, build_interface_list
+from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
@@ -90,6 +92,25 @@ def _enrich_results(results):
             for d in r.devices or []:
                 if d.get("ip") in ip_url_map:
                     d["nb_device_url"] = ip_url_map[d["ip"]]
+
+
+def _csv_cell(value):
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _csv_response(filename, columns, rows):
+    """columns: list of (header, getter) where getter(row) -> cell value."""
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    writer = csv.writer(response)
+    writer.writerow([header for header, _ in columns])
+    for row in rows:
+        writer.writerow([_csv_cell(getter(row)) for _, getter in columns])
+    return response
 
 
 def _enrich_mac_history(rows):
@@ -564,6 +585,22 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                     date_to=form.cleaned_data.get("date_to"),
                 )
                 _enrich_mac_history(rows)
+                if request.GET.get("export") == "csv":
+                    return _csv_response(
+                        "mac_history.csv",
+                        [
+                            ("Device", lambda r: r.get("device_name") or r.get("device_ip")),
+                            ("Port", lambda r: r.get("port")),
+                            ("MAC", lambda r: r.get("mac")),
+                            ("VLAN", lambda r: r.get("vlan")),
+                            ("Client IP", lambda r: r.get("client_ip")),
+                            ("Client Name", lambda r: r.get("client_name")),
+                            ("Area", lambda r: r.get("area")),
+                            ("First Seen", lambda r: r.get("time_first")),
+                            ("Last Seen", lambda r: r.get("time_last")),
+                        ],
+                        rows,
+                    )
                 context.update({
                     "rows": rows,
                     "total": total,
@@ -600,6 +637,21 @@ class LensArpHistoryView(PermissionRequiredMixin, View):
                     date_to=form.cleaned_data.get("date_to"),
                 )
                 _enrich_arp_history(rows)
+                if request.GET.get("export") == "csv":
+                    return _csv_response(
+                        "arp_history.csv",
+                        [
+                            ("Router", lambda r: r.get("router_name") or r.get("router_ip")),
+                            ("MAC", lambda r: r.get("mac")),
+                            ("Client IP", lambda r: r.get("client_ip")),
+                            ("Client Name", lambda r: r.get("client_name")),
+                            ("Vendor", lambda r: r.get("vendor")),
+                            ("Area", lambda r: r.get("area")),
+                            ("First Seen", lambda r: r.get("time_first")),
+                            ("Last Seen", lambda r: r.get("time_last")),
+                        ],
+                        rows,
+                    )
                 context.update({
                     "rows": rows,
                     "total": total,
@@ -624,12 +676,14 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
             "form": form,
             "page_title": self.page_title,
             "locked_admin": self.default_filters.get("admin"),
+            "locked_oper": self.default_filters.get("oper"),
         }
 
         if form.is_valid():
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             live = request.GET.get("live") == "1"
             vlan_query = form.cleaned_data.get("vlan") or None
+            oper_query = form.cleaned_data.get("oper") or None
             rows, total, truncated, scan_truncated = build_interface_list(
                 device_query=form.cleaned_data.get("device") or None,
                 interface_query=form.cleaned_data.get("interface") or None,
@@ -643,10 +697,47 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
                 admin_query=form.cleaned_data.get("admin") or None,
                 grafana_template=config.get("grafana_interface_url"),
             )
+            vm_meta = {}
             if live:
                 backends = get_backends(config)
                 rows = apply_live_status(rows, backends, vlan_query=vlan_query)
-                total = len(rows)
+            else:
+                # Single bulk query against VictoriaMetrics's interfaceUpDownState
+                # metric — no per-device Netdisco fan-out.
+                vm_meta = apply_vm_oper_status(rows, config.get("victoria_metrics", {}))
+                # Automatic fallback: only for admin-up rows VM had no data for
+                # (either it's down entirely, or these specific devices aren't
+                # covered by the if_updown_state module yet) — admin-down rows
+                # are expected to have no VM series (dropped at ingest) and
+                # don't need a fallback fan-out.
+                fallback_rows = [r for r in rows if r.get("admin") == "up" and r.get("oper") is None]
+                if fallback_rows:
+                    backends = get_backends(config)
+                    apply_live_status(fallback_rows, backends, vlan_query=None)
+                    vm_meta["fallback_count"] = len(fallback_rows)
+
+            if oper_query:
+                rows = [r for r in rows if (r.get("oper") or "").lower() == oper_query]
+            total = len(rows)
+
+            if request.GET.get("export") == "csv":
+                return _csv_response(
+                    "interfaces.csv",
+                    [
+                        ("Element name", lambda r: r.get("device_name")),
+                        ("Interface (ifDescr)", lambda r: r.get("interface_name")),
+                        ("Description (ifAlias)", lambda r: r.get("description")),
+                        ("VLAN", lambda r: r.get("vlan")),
+                        ("Speed", lambda r: r.get("speed")),
+                        ("Managed", lambda r: r.get("managed")),
+                        ("If admin.", lambda r: r.get("admin")),
+                        ("If oper.", lambda r: r.get("oper")),
+                        ("Type", lambda r: r.get("type")),
+                        ("PoE type", lambda r: r.get("poe_type")),
+                        ("Updated", lambda r: r.get("updated")),
+                    ],
+                    rows,
+                )
 
             context.update({
                 "rows": rows,
@@ -655,6 +746,7 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
                 "scan_truncated": scan_truncated,
                 "searched": True,
                 "live": live,
+                "vm_meta": vm_meta,
             })
 
         return render(request, "netbox_lens/interface_search.html", context)
