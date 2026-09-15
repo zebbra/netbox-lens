@@ -645,6 +645,7 @@ class LensArpHistoryView(PermissionRequiredMixin, View):
                             ("MAC", lambda r: r.get("mac")),
                             ("Client IP", lambda r: r.get("client_ip")),
                             ("Client Name", lambda r: r.get("client_name")),
+                            ("Last Known", lambda r: r.get("active")),
                             ("Vendor", lambda r: r.get("vendor")),
                             ("Area", lambda r: r.get("area")),
                             ("First Seen", lambda r: r.get("time_first")),

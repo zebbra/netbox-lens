@@ -48,6 +48,7 @@ def build_arp_history(
             "client_ip": e.get("ip"),
             "client_name": e.get("dns"),
             "vendor": e.get("vendor"),
+            "active": e.get("active"),
             "time_first": e.get("time_first"),
             "time_last": e.get("time_last"),
         }
