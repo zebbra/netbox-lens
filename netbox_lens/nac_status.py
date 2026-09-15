@@ -38,11 +38,11 @@ def build_nac_status(backends, device_query, interface_query=None, show_disconne
     Returns (rows, total_count, truncated, port_scan_truncated, hidden_count).
     """
     if not device_query or not backends:
-        return [], 0, False, False
+        return [], 0, False, False, 0
 
     device_targets, device_truncated = _device_targets(device_query)
     if not device_targets:
-        return [], 0, False, False
+        return [], 0, False, False, 0
 
     candidates = []  # (device_ip, device_name, port, descr)
     for ip, name in device_targets:
