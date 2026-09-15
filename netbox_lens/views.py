@@ -827,6 +827,9 @@ def _is_switch_or_router(device):
 if NbDevice:
     @register_model_view(NbDevice, name="lens_macarp", path="lens-mac-arp")
     class DeviceMacArpView(ObjectView):
+        """Tab shell only — no Netdisco call here, so opening the tab doesn't
+        block on it. device_macarp.html fetches the actual rows via htmx
+        from LensDeviceMacArpDataView once the page has already rendered."""
         queryset = NbDevice.objects.all()
         additional_permissions = ["netbox_lens.use_lens"]
         template_name = "netbox_lens/device_macarp.html"
@@ -836,11 +839,17 @@ if NbDevice:
             permission="netbox_lens.use_lens",
         )
 
-        def get_extra_context(self, request, instance):
-            ip = _device_ip(instance)
-            if not ip:
-                return {"rows": [], "lens_device_ip": None, "total": 0, "truncated": False}
 
+class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
+    """htmx partial backing DeviceMacArpView's tab — the actual Netdisco
+    fetch, deferred so it can't block the tab's own page load."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        ip = _device_ip(device)
+        context = {"rows": [], "total": 0, "truncated": False, "lens_device_ip": ip}
+        if ip:
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             backends = get_backends(config)
             rows, total, truncated, _ = build_mac_history(backends, device_ip=ip, max_rows=MAX_MACARP_ROWS)
@@ -848,16 +857,21 @@ if NbDevice:
             if NbInterface:
                 iface_map = {
                     iface.name: iface.get_absolute_url()
-                    for iface in NbInterface.objects.filter(device=instance).only("name")
+                    for iface in NbInterface.objects.filter(device=device).only("name")
                 }
             for r in rows:
-                r["device_name"] = instance.name
-                r["area"] = instance.cf.get("service_group")
+                r["device_name"] = device.name
+                r["area"] = device.cf.get("service_group")
                 if r.get("port"):
                     r["nb_interface_url"] = iface_map.get(r["port"])
-            return {
+            summary = {}
+            if backends:
+                summary = backends[0].device_summary(ip) or {}
+            context.update({
                 "rows": rows,
-                "lens_device_ip": ip,
                 "total": total,
                 "truncated": truncated,
-            }
+                "lens_last_macsuck": summary.get("last_macsuck"),
+                "lens_last_arpnip": summary.get("last_arpnip"),
+            })
+        return render(request, "netbox_lens/device_macarp_data.html", context)

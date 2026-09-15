@@ -30,4 +30,5 @@ urlpatterns = [
     path("probe/<int:pk>/", views.LensProbeView.as_view(), name="probe"),
     path("update-modules/<int:pk>/", views.LensUpdateModulesView.as_view(), name="update_modules"),
     path("discobox/pause/", views.LensDiscoboxPauseView.as_view(), name="discobox_pause"),
+    path("device/<int:pk>/macarp-data/", views.LensDeviceMacArpDataView.as_view(), name="device_macarp_data"),
 ]

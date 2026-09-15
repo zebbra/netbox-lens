@@ -5,13 +5,18 @@
 <div class="row">
   <div class="col-12">
     <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">
-          {% trans "MAC History" %}
-          <span class="badge text-bg-secondary">{{ total }}</span>
-        </h5>
+      <div id="lens-macarp-body"
+           hx-get="{% url 'plugins:netbox_lens:device_macarp_data' pk=object.pk %}"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <div class="card-header">
+          <h5 class="mb-0">{% trans "MAC History" %}</h5>
+        </div>
+        <div class="card-body text-muted d-flex align-items-center gap-2">
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          {% trans "Loading from Netdisco…" %}
+        </div>
       </div>
-      {% include 'netbox_lens/mac_history_table.html' with hide_device_area=True %}
     </div>
   </div>
 </div>

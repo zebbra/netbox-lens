@@ -1,0 +1,21 @@
+{% load i18n %}
+{% load lens_filters %}
+<div class="card-header d-flex align-items-center flex-wrap gap-2">
+  <h5 class="mb-0 me-2">{% trans "MAC History" %}</h5>
+  <span class="badge text-bg-secondary">{{ total }}</span>
+  {% if not lens_device_ip %}
+  <span class="text-muted small">{% trans "This device has no primary IPv4 address." %}</span>
+  {% elif lens_last_macsuck or lens_last_arpnip %}
+  <span class="text-muted small ms-auto">
+    <i class="mdi mdi-database-outline" aria-hidden="true"></i>
+    {% trans "From Netdisco" %}
+    {% if lens_last_macsuck %}
+    — {% trans "macsuck" %} <span title="{{ lens_last_macsuck|lens_absolute }}">{{ lens_last_macsuck|lens_relative }}</span>
+    {% endif %}
+    {% if lens_last_arpnip %}
+    · {% trans "arpnip" %} <span title="{{ lens_last_arpnip|lens_absolute }}">{{ lens_last_arpnip|lens_relative }}</span>
+    {% endif %}
+  </span>
+  {% endif %}
+</div>
+{% include 'netbox_lens/mac_history_table.html' with hide_device_area=True %}
