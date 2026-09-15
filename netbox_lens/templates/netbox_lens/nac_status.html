@@ -27,7 +27,14 @@
           <th></th>
           <th>{{ form.interface }}</th>
           <th></th>
-          <th></th>
+          <th>
+            <div class="form-check form-check-inline text-nowrap">
+              {{ form.hide_disconnected }}
+              <label class="form-check-label small" for="{{ form.hide_disconnected.id_for_label }}">
+                {% trans "Hide disconnected" %}
+              </label>
+            </div>
+          </th>
           <th></th>
           <th></th>
           <th></th>
@@ -109,6 +116,16 @@
 {% endif %}
 
 {% if searched %}
+  {% if hidden_count %}
+  <div class="text-muted small mt-2">
+    <i class="mdi mdi-eye-off-outline" aria-hidden="true"></i>
+    {% blocktrans trimmed count counter=hidden_count %}
+    {{ counter }} disconnected port hidden.
+    {% plural %}
+    {{ counter }} disconnected ports hidden.
+    {% endblocktrans %}
+  </div>
+  {% endif %}
   {% if scan_truncated %}
   <div class="alert alert-warning mt-2">
     {% trans "Matched more devices or ports than could be scanned — narrow your search (e.g. by interface) for a complete result." %}

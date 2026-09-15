@@ -285,3 +285,9 @@ class NacStatusForm(forms.Form):
             "autocomplete": "off",
         }),
     )
+    hide_disconnected = forms.BooleanField(
+        label="Hide disconnected",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )

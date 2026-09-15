@@ -768,16 +768,18 @@ class LensNacStatusView(PermissionRequiredMixin, View):
                     "PLUGINS_CONFIG['netbox_lens']['backends']."
                 )
             else:
-                rows, total, truncated, scan_truncated = build_nac_status(
+                rows, total, truncated, scan_truncated, hidden_count = build_nac_status(
                     backends,
                     device_query=form.cleaned_data.get("device"),
                     interface_query=form.cleaned_data.get("interface") or None,
+                    hide_disconnected=form.cleaned_data.get("hide_disconnected"),
                 )
                 context.update({
                     "rows": rows,
                     "total": total,
                     "truncated": truncated,
                     "scan_truncated": scan_truncated,
+                    "hidden_count": hidden_count,
                     "searched": True,
                 })
 
