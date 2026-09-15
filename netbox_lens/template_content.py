@@ -114,41 +114,40 @@ def _device_ip(device):
 class DeviceLensPanel(PluginTemplateExtension):
     models = ["dcim.device"]
 
-    def left_page(self):
-        if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
-            return ""
-        return self.render("netbox_lens/device_search_links.html", extra_context={
-            "lens_device_name": self.context["object"].name,
-        })
-
     def right_page(self):
         if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
             return ""
-        ip = _device_ip(self.context["object"])
-        if not ip:
-            return ""
-        config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
-        backends = get_backends(config)
-        if not backends:
-            return ""
         device = self.context["object"]
-        nodes = [n for n in _device_nodes(backends, ip) if n.get("active")]
-        neighbors = _device_neighbors(backends, ip, device=device)
-        stats = {
-            "macs": len(nodes),
-            "ports": len({n["port"] for n in nodes if n.get("port")}),
-            "vlans": len({n["vlan"] for n in nodes if n.get("vlan") and n["vlan"] != "0"}),
-            "neighbors": len(neighbors),
-        }
-        summaries = _device_summaries(backends, ip)
-        found_labels = {label for label, _ in summaries}
+        ip = _device_ip(device)
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+        # Quick-search links only need the device name (no Netdisco round trip),
+        # so they're shown even without an IP/backends — everything else here
+        # needs both, computed once and shared with the stats card so we don't
+        # fetch from Netdisco twice for one page load.
+        backends = get_backends(config) if ip else []
+        stats = None
+        neighbors = []
+        summaries = []
+        found_labels = set()
+        if ip and backends:
+            nodes = [n for n in _device_nodes(backends, ip) if n.get("active")]
+            neighbors = _device_neighbors(backends, ip, device=device)
+            stats = {
+                "macs": len(nodes),
+                "ports": len({n["port"] for n in nodes if n.get("port")}),
+                "vlans": len({n["vlan"] for n in nodes if n.get("vlan") and n["vlan"] != "0"}),
+                "neighbors": len(neighbors),
+            }
+            summaries = _device_summaries(backends, ip)
+            found_labels = {label for label, _ in summaries}
         return self.render("netbox_lens/device_nodes_panel.html", extra_context={
+            "lens_device_name": device.name,
             "lens_stats": stats,
             "lens_found": bool(summaries),
             "lens_device_ip": ip,
             "lens_summaries": summaries,
             "lens_backends": [b.label for b in backends],
-            "lens_web_links": _device_web_links(backends, ip, found_labels),
+            "lens_web_links": _device_web_links(backends, ip, found_labels) if ip else [],
             "lens_neighbors": neighbors,
             "lens_can_trigger": self.context["request"].user.has_perm("netbox_lens.trigger_lens"),
             "lens_is_superuser": self.context["request"].user.is_superuser,

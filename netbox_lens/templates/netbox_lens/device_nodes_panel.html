@@ -1,17 +1,15 @@
 {% load i18n %}
 {% load lens_filters %}
 
-{% if lens_stats %}
+{% if lens_device_name %}
 <div class="card mb-3">
   <div class="card-header d-flex align-items-center gap-2">
     <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
     <strong>LENS</strong>
-    <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
-       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox. SNMP Modulator: writes polling config.' %}"></i>
   </div>
   <div class="card-body">
-    {% if lens_found %}
-    <div class="d-flex gap-4">
+    {% if lens_stats %}
+    <div class="d-flex gap-4 mb-3">
       <div class="text-center">
         <div class="fs-4 fw-bold">{{ lens_stats.macs }}</div>
         <div class="text-muted small">{% trans "Active MACs" %}</div>
@@ -29,10 +27,38 @@
         <div class="text-muted small">{% trans "Neighbors" %}</div>
       </div>
     </div>
-    {% else %}
-    <div class="text-muted">{% trans "Device not found in" %} {{ lens_backends|join:", " }}.</div>
     {% endif %}
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:interface_search' %}?device={{ lens_device_name|urlencode }}">
+        <i class="mdi mdi-ethernet" aria-hidden="true"></i> {% trans "Default" %}
+      </a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:down_ports' %}?device={{ lens_device_name|urlencode }}">
+        <i class="mdi mdi-lan-disconnect" aria-hidden="true"></i> {% trans "Down Ports" %}
+      </a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:mac_history' %}?device={{ lens_device_name|urlencode }}">
+        <i class="mdi mdi-history" aria-hidden="true"></i> {% trans "MAC History" %}
+      </a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ lens_device_name|urlencode }}">
+        <i class="mdi mdi-shield-search" aria-hidden="true"></i> {% trans "NAC Status" %}
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if lens_stats %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>{% trans "LENS Detail" %}</strong>
+    <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox. SNMP Modulator: writes polling config.' %}"></i>
+  </div>
+  <div class="card-body">
+    {% if not lens_found %}
+    <div class="text-muted">{% trans "Device not found in" %} {{ lens_backends|join:", " }}.</div>
     <hr class="my-3">
+    {% endif %}
     <div class="row">
       <div class="col-4">
         <table class="table table-hover attr-table table-sm mb-2">
