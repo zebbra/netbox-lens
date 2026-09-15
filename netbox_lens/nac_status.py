@@ -30,10 +30,11 @@ def build_nac_status(backends, device_query, interface_query=None, show_disconne
     needs one Netdisco call per port (no bulk endpoint exists for PAE data),
     so browsing without a device anchor would fan out across the whole fleet.
 
-    Unless show_disconnected, rows with authconfig_state == "disconnected"
-    (Netdisco's dot1xAuthPaeState) are filtered out after fetching — most
-    people only care about ports with an actual session, not every idle/empty
-    port on the device.
+    Unless show_disconnected, rows with authconfig_state "disconnected"
+    (Netdisco's dot1xAuthPaeState) or empty/None (no 802.1X session at all,
+    e.g. not dot1x-configured) are filtered out after fetching — most people
+    only care about ports with an actual session, not every idle/empty port
+    on the device.
 
     Returns (rows, total_count, truncated, port_scan_truncated, hidden_count).
     """
@@ -102,7 +103,11 @@ def build_nac_status(backends, device_query, interface_query=None, show_disconne
     rows = [r for r in rows if r]
     hidden_count = 0
     if not show_disconnected:
-        kept = [r for r in rows if (r.get("authconfig_state") or "").lower() != "disconnected"]
+        # "disconnected" is dot1xAuthPaeState's own idle value; an empty/None
+        # authconfig_state means the port has no 802.1X session at all (e.g.
+        # not dot1x-configured) — both are "nothing active here" from the
+        # user's point of view, so both get hidden by default.
+        kept = [r for r in rows if (r.get("authconfig_state") or "").lower() not in ("", "disconnected")]
         hidden_count = len(rows) - len(kept)
         rows = kept
     rows.sort(key=lambda r: (r["device_name"], r["port"]))
