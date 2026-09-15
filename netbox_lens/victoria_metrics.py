@@ -1,7 +1,8 @@
 import requests
 
-# RFC1213 ifOperStatus / ifAdminStatus enum values, as scraped by the
-# snmp-exporter "if_updown_state" module (see interfaceUpDownState metric).
+# RFC1213 ifOperStatus / ifAdminStatus enum values. Kept around for the
+# interfaceUpDownState path below (currently disabled) — the ifOperStatus_info
+# path doesn't need these since the enum value is already a string label.
 OPER_STATUS_LABELS = {
     1: "up",
     2: "down",
@@ -37,8 +38,8 @@ def query_instant(url, query, timeout=10, verify_tls=True):
 
 def fetch_interface_updown_state(url, device_ids, timeout=10, verify_tls=True):
     """
-    Query the interfaceUpDownState metric for the given NetBox device ids in
-    a single request and return (status, latest_sample_ts):
+    Query the given NetBox device ids' operational interface status in a
+    single request and return (status, latest_sample_ts):
 
       status: {(device_id, if_name): {"admin": ..., "oper": ...}}, values as
       "up"/"down"/... strings, keyed by device_id as a string.
@@ -47,16 +48,16 @@ def fetch_interface_updown_state(url, device_ids, timeout=10, verify_tls=True):
       float) among the returned series, or None if there were no results —
       i.e. how fresh this data actually is, for display to the user.
 
-    The scrape/relabel pipeline already drops admin-down series at ingest
-    time, so a (device_id, if_name) pair missing from the result means
-    either the interface is admin-down, or the device isn't covered by the
-    if_updown_state SNMP module — callers can't tell those apart and should
-    treat a miss as "unknown", not "down".
+    Uses ifOperStatus_info (an snmp-exporter EnumAsInfo metric — the state is
+    the ifOperStatus label itself, sample value always 1), from the if_full /
+    if_status modules, which have broad fleet coverage today. admin is left
+    None here — NetBox's own enabled field is the admin-status source of
+    truth elsewhere in this codebase, so it isn't needed from VM.
     """
     if not device_ids:
         return {}, None
     ids = "|".join(str(i) for i in device_ids)
-    query = f'interfaceUpDownState{{netbox_id=~"{ids}"}}'
+    query = f'ifOperStatus_info{{netbox_id=~"{ids}"}}'
     results = query_instant(url, query, timeout=timeout, verify_tls=verify_tls)
 
     status = {}
@@ -65,26 +66,58 @@ def fetch_interface_updown_state(url, device_ids, timeout=10, verify_tls=True):
         metric = series.get("metric", {})
         device_id = metric.get("netbox_id")
         if_name = metric.get("ifName")
-        if not device_id or not if_name:
+        oper = metric.get("ifOperStatus")
+        if not device_id or not if_name or not oper:
             continue
         try:
-            sample_ts, sample_val = series["value"]
-            oper_code = int(float(sample_val))
-        except (KeyError, IndexError, TypeError, ValueError):
-            continue
-        try:
-            ts = float(sample_ts)
+            ts = float(series["value"][0])
             if latest_ts is None or ts > latest_ts:
                 latest_ts = ts
-        except (TypeError, ValueError):
+        except (KeyError, IndexError, TypeError, ValueError):
             pass
-        admin_code = None
-        try:
-            admin_code = int(metric.get("ifAdminStatus"))
-        except (TypeError, ValueError):
-            pass
-        status[(str(device_id), if_name)] = {
-            "oper": OPER_STATUS_LABELS.get(oper_code, str(oper_code)),
-            "admin": ADMIN_STATUS_LABELS.get(admin_code, str(admin_code)) if admin_code else None,
-        }
+        status[(str(device_id), if_name)] = {"oper": oper, "admin": None}
     return status, latest_ts
+
+
+# Once the if_updown_state SNMP-exporter module (interfaceUpDownState metric)
+# has broad fleet coverage, it's the better source: it also carries
+# ifAdminStatus as a label, and the ingest-time relabel pipeline already
+# drops admin-down series, so a hit there means "genuinely admin-up but
+# reporting this oper state" with no extra NetBox cross-check needed.
+#
+# def fetch_interface_updown_state(url, device_ids, timeout=10, verify_tls=True):
+#     if not device_ids:
+#         return {}, None
+#     ids = "|".join(str(i) for i in device_ids)
+#     query = f'interfaceUpDownState{{netbox_id=~"{ids}"}}'
+#     results = query_instant(url, query, timeout=timeout, verify_tls=verify_tls)
+#
+#     status = {}
+#     latest_ts = None
+#     for series in results:
+#         metric = series.get("metric", {})
+#         device_id = metric.get("netbox_id")
+#         if_name = metric.get("ifName")
+#         if not device_id or not if_name:
+#             continue
+#         try:
+#             sample_ts, sample_val = series["value"]
+#             oper_code = int(float(sample_val))
+#         except (KeyError, IndexError, TypeError, ValueError):
+#             continue
+#         try:
+#             ts = float(sample_ts)
+#             if latest_ts is None or ts > latest_ts:
+#                 latest_ts = ts
+#         except (TypeError, ValueError):
+#             pass
+#         admin_code = None
+#         try:
+#             admin_code = int(metric.get("ifAdminStatus"))
+#         except (TypeError, ValueError):
+#             pass
+#         status[(str(device_id), if_name)] = {
+#             "oper": OPER_STATUS_LABELS.get(oper_code, str(oper_code)),
+#             "admin": ADMIN_STATUS_LABELS.get(admin_code, str(admin_code)) if admin_code else None,
+#         }
+#     return status, latest_ts
