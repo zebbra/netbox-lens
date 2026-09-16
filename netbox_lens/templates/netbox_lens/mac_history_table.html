@@ -20,6 +20,11 @@
         <th>{% trans "Device" %}</th>
         {% endif %}
         <th>{% trans "Port" %}</th>
+        <th>
+          {% trans "Connection" %}
+          <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+             title="{% trans 'WLAN clients often randomize their MAC address per session/reconnect — the same physical device may show up under different MACs over time.' %}"></i>
+        </th>
         <th>{% trans "MAC" %}</th>
         <th>{% trans "VLAN" %}</th>
         <th>{% trans "Client IP" %}</th>
@@ -50,6 +55,12 @@
           <a href="{{ row.nb_interface_url }}">{{ row.port|default:"—" }}</a>
           {% else %}
           {{ row.port|default:"—" }}
+          {% endif %}
+        </td>
+        <td>
+          {% if row.is_wireless is None %}—
+          {% elif row.is_wireless %}<i class="mdi mdi-wifi" aria-hidden="true" title="{% trans 'WLAN' %}"></i> {% trans "WLAN" %}
+          {% else %}<i class="mdi mdi-ethernet" aria-hidden="true" title="{% trans 'Wired' %}"></i> {% trans "Wired" %}
           {% endif %}
         </td>
         <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac|default:"—" }}</code></td>
@@ -87,7 +98,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if hide_device_area %}9{% else %}11{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr><td colspan="{% if hide_device_area %}10{% else %}12{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

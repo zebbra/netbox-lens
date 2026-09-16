@@ -171,6 +171,34 @@ def _apply_active_now(rows, vm_config):
             r["active_now"] = data["oper"] == "up"
 
 
+def _apply_wireless(rows, backends):
+    """Classify each row wired vs wireless via device_port_wireless (one
+    Netdisco call per distinct device — no per-port fan-out): a node's port
+    is wireless iff it's in that device's radio-port set (WLC nodes report
+    port as "<AP-MAC>.<radio-index>", so membership is a stable, direct
+    match, not a guess).
+
+    Leaves is_wireless unset (rendered as "—") for devices with no radio
+    ports at all — those can't have wireless nodes, and it also covers
+    Netdisco calls that fail, so this never mislabels a row as wired.
+    """
+    if not backends:
+        return
+    device_ips = {r["device_ip"] for r in rows if r.get("device_ip") and r.get("port")}
+    if not device_ips:
+        return
+    wireless_by_device = {}
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(backends[0].wireless_ports, ip): ip for ip in device_ips}
+        for future in as_completed(futures):
+            ip = futures[future]
+            wireless_by_device[ip] = future.result()
+    for r in rows:
+        ports = wireless_by_device.get(r.get("device_ip"))
+        if ports:
+            r["is_wireless"] = r.get("port") in ports
+
+
 def _enrich_arp_history(rows):
     """Attach nb_device_url and area (service_group) to arp-history rows by resolving
     each distinct router IP to its NetBox Device."""
@@ -617,6 +645,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                 )
                 _enrich_mac_history(rows)
                 _apply_active_now(rows, config.get("victoria_metrics", {}))
+                _apply_wireless(rows, backends)
                 if request.GET.get("export") == "csv":
                     return _csv_response(
                         "mac_history.csv",
@@ -628,6 +657,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                             ("Client IP", lambda r: r.get("client_ip")),
                             ("Client Name", lambda r: r.get("client_name")),
                             ("Active Now", lambda r: r.get("active_now")),
+                            ("Connection", lambda r: {True: "WLAN", False: "Wired"}.get(r.get("is_wireless"))),
                             ("Area", lambda r: r.get("area")),
                             ("First Seen", lambda r: r.get("time_first")),
                             ("Last Seen", lambda r: r.get("time_last")),

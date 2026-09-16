@@ -366,11 +366,38 @@ class NetdiscoBackend(LensBackend):
                     "up": p.get("up"),
                     "up_admin": p.get("up_admin"),
                     "vlan": p.get("vlan"),
+                    "type": p.get("type"),
                 }
                 for p in data
             ]
         except Exception:
             return []
+
+    def wireless_ports(self, device_ip: str) -> set:
+        """Radio port names for this device (device_port_wireless rows) — the
+        cheapest wired-vs-wireless discriminator: a node's port is wireless
+        iff it's in this set (WLC nodes report port as "<AP-MAC>.<radio>").
+        One call per device, no per-port fan-out."""
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return set()
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/object/device/{device_ip}/wireless_ports",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Accept": "application/json",
+                },
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else []
+            if not isinstance(data, list):
+                return set()
+            return {p.get("port") for p in data if p.get("port")}
+        except Exception:
+            return set()
 
     def device_last_discover(self, device_ip: str):
         """Netdisco's device_port.up/up_admin are populated by its "discover"
