@@ -659,6 +659,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                             ("Client Name", lambda r: r.get("client_name")),
                             ("Active Now", lambda r: r.get("active_now")),
                             ("Connection", lambda r: {True: "WLAN", False: "Wired"}.get(r.get("is_wireless"))),
+                            ("SSID", lambda r: r.get("ssid")),
                             ("Area", lambda r: r.get("area")),
                             ("First Seen", lambda r: r.get("time_first")),
                             ("Last Seen", lambda r: r.get("time_last")),

@@ -214,6 +214,8 @@ def build_mac_history(
             "vlan": n.get("vlan"),
             "client_ip": client.get("ip"),
             "client_name": client.get("dns"),
+            "ssid": n.get("ssid"),
+            "sigstrength": n.get("sigstrength"),
             "time_first": n.get("time_first"),
             "time_last": n.get("time_last"),
         })

@@ -195,6 +195,20 @@ class NetdiscoBackend(LensBackend):
             data = resp.json() if resp.content else {}
             if not isinstance(data, dict):
                 return []
+            # /search/node already returns a "wireless" array (node_wireless
+            # rows) alongside "sightings" for the same query, at no extra
+            # request cost. There's no FK between the two tables — correlate
+            # by MAC. Netdisco writes the literal ssid "unknown" when its
+            # macsuck worker's SNMP walk misses the SSID table for that
+            # client (association/roam race, or the controller not
+            # populating it); since (mac, ssid) is node_wireless's primary
+            # key, that becomes a second permanent row for the same client,
+            # so it's filtered out here rather than treated as a real SSID.
+            wireless_by_mac = {}
+            for w in (data.get("wireless") or []):
+                if not w.get("mac") or w.get("ssid") == "unknown":
+                    continue
+                wireless_by_mac.setdefault(w["mac"], w)
             return [
                 {
                     "mac": s.get("mac"),
@@ -205,6 +219,8 @@ class NetdiscoBackend(LensBackend):
                     "time_last": s.get("time_last"),
                     "_device_ip": s.get("switch"),
                     "_device_name": (s.get("device") or {}).get("name"),
+                    "ssid": (wireless_by_mac.get(s.get("mac")) or {}).get("ssid"),
+                    "sigstrength": (wireless_by_mac.get(s.get("mac")) or {}).get("sigstrength"),
                 }
                 for s in (data.get("sightings") or [])
             ]

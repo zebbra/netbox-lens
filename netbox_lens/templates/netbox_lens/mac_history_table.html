@@ -59,7 +59,10 @@
         </td>
         <td>
           {% if row.is_wireless is None %}—
-          {% elif row.is_wireless %}<i class="mdi mdi-wifi" aria-hidden="true" title="{% trans 'WLAN' %}"></i> {% trans "WLAN" %}
+          {% elif row.is_wireless %}
+            <i class="mdi mdi-wifi" aria-hidden="true"
+               title="{% if row.sigstrength %}{% trans 'Signal' %}: {{ row.sigstrength }}{% endif %}"></i>
+            {% trans "WLAN" %}{% if row.ssid %} · <code class="lens-copy" data-value="{{ row.ssid }}">{{ row.ssid }}</code>{% endif %}
           {% else %}<i class="mdi mdi-ethernet" aria-hidden="true" title="{% trans 'Wired' %}"></i> {% trans "Wired" %}
           {% endif %}
         </td>
