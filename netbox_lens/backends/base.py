@@ -63,6 +63,12 @@ class LensBackend(ABC):
     def device_ports(self, device_ip: str) -> list:
         return []
 
+    def wireless_ports(self, device_ip: str):
+        """Radio port names for this device, or None if this backend can't
+        answer that (unsupported, or the call failed) — callers should treat
+        None as "unknown", not "wired"."""
+        return None
+
     def port_pae(self, device_ip: str, port: str) -> dict:
         return {}
 

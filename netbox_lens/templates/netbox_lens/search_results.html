@@ -258,10 +258,15 @@
             <th>{% trans "MAC" %}</th>
             <th>{% trans "Device" %}</th>
             <th>{% trans "Port" %}</th>
+            <th>{% trans "Connection" %}</th>
             <th>{% trans "VLAN" %}</th>
             <th>{% trans "First Seen" %}</th>
             <th>{% trans "Last Seen" %}</th>
-            <th>{% trans "Active" %}</th>
+            <th>
+              {% trans "Active Now" %}
+              <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+                 title="{% trans 'Whether the port is currently up (VictoriaMetrics) — not whether this sighting is recent.' %}"></i>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -279,12 +284,31 @@
                 {% endif %}
               </span>
             </td>
-            <td><code class="lens-copy" data-value="{{ row.port }}">{{ row.port }}</code></td>
+            <td>
+              {% if row.nb_interface_url %}
+              <a href="{{ row.nb_interface_url }}">{{ row.port }}</a>
+              {% else %}
+              <code class="lens-copy" data-value="{{ row.port }}">{{ row.port }}</code>
+              {% endif %}
+              {% if row.port_description %}
+              <br /><span class="text-muted small">{{ row.port_description }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.is_wireless is None %}—
+              {% elif row.is_wireless %}
+                <i class="mdi mdi-wifi" aria-hidden="true"
+                   title="{% if row.sigstrength %}{% trans 'Signal' %}: {{ row.sigstrength }}{% endif %}"></i>
+                {% trans "WLAN" %}{% if row.ssid %} · <code class="lens-copy" data-value="{{ row.ssid }}">{{ row.ssid }}</code>{% endif %}
+              {% else %}<i class="mdi mdi-ethernet" aria-hidden="true" title="{% trans 'Wired' %}"></i> {% trans "Wired" %}
+              {% endif %}
+            </td>
             <td>{{ row.vlan|default:"—" }}</td>
             <td>{{ row.time_first_stamp|default:"—" }}</td>
             <td>{{ row.time_last_stamp|default:"—" }}</td>
             <td>
-              {% if row.active %}<span class="badge text-bg-green">{% trans "yes" %}</span>
+              {% if row.active_now is None %}—
+              {% elif row.active_now %}<span class="badge text-bg-green">{% trans "yes" %}</span>
               {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}
             </td>
           </tr>

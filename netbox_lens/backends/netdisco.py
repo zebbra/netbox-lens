@@ -81,7 +81,25 @@ class NetdiscoBackend(LensBackend):
                     )
                     if r2.ok:
                         d2 = r2.json() if r2.content else {}
-                        result.sightings.extend(d2.get("sightings") or [])
+                        sightings = d2.get("sightings") or []
+                        # /search/node returns "wireless" (node_wireless rows)
+                        # alongside "sightings" for the same query, at no extra
+                        # request cost. No FK between the tables — correlate by
+                        # MAC (there's only one MAC per follow-up call here).
+                        # Skip ssid=="unknown": Netdisco writes that literal
+                        # string when its macsuck worker's SNMP walk misses the
+                        # SSID table for a client mid-association/roam, and
+                        # since (mac, ssid) is node_wireless's primary key, it
+                        # becomes a spurious permanent second row otherwise.
+                        wireless = next(
+                            (w for w in (d2.get("wireless") or []) if w.get("ssid") and w.get("ssid") != "unknown"),
+                            None,
+                        )
+                        if wireless:
+                            for s in sightings:
+                                s["ssid"] = wireless.get("ssid")
+                                s["sigstrength"] = wireless.get("sigstrength")
+                        result.sightings.extend(sightings)
 
             # Device name/hostname matching is a separate Netdisco entity from
             # node/MAC sightings — query it too so switch/router hostnames

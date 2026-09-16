@@ -56,6 +56,9 @@
           {% else %}
           {{ row.port|default:"—" }}
           {% endif %}
+          {% if row.port_description %}
+          <br /><span class="text-muted small">{{ row.port_description }}</span>
+          {% endif %}
         </td>
         <td>
           {% if row.is_wireless is None %}—

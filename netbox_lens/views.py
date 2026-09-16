@@ -95,6 +95,62 @@ def _enrich_results(results):
                     d["nb_device_url"] = ip_url_map[d["ip"]]
 
 
+def _enrich_sightings(results, backends, vm_config):
+    """Bring search sightings to parity with MAC History: interface link +
+    port_description (free — same device+port lookup as the URL), wired vs
+    wireless classification (wireless_ports(), one bulk call per distinct
+    device, no per-port fan-out), and a real "active now" (oper=up, from
+    VictoriaMetrics) — unlike Netdisco's own "active" flag on a sighting,
+    which just means "not archived/superseded", not "recently confirmed";
+    since search() already filters to non-archived sightings by default,
+    that flag is trivially "yes" for every row and tells the user nothing.
+    """
+    if not NbDevice:
+        return
+    sightings = [s for r in results or [] for s in (r.sightings or [])]
+    ips = {s["switch"] for s in sightings if s.get("switch")}
+    if not ips:
+        return
+    q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
+    device_map = {
+        str(d.primary_ip4.address.ip): d
+        for d in NbDevice.objects.filter(q).select_related("primary_ip4")
+    }
+    if not device_map:
+        return
+
+    iface_map = {}
+    if NbInterface:
+        for iface in NbInterface.objects.filter(device__in=device_map.values()).only(
+            "device_id", "name", "description"
+        ):
+            iface_map[(iface.device_id, iface.name)] = (iface.get_absolute_url(), iface.description)
+
+    wireless_by_ip = {}
+    if backends:
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(backends[0].wireless_ports, ip): ip for ip in device_map}
+            for future in as_completed(futures):
+                wireless_by_ip[futures[future]] = future.result()
+
+    for s in sightings:
+        d = device_map.get(s.get("switch"))
+        if not d:
+            continue
+        s["nb_device_url"] = d.get_absolute_url()
+        s["device_id"] = d.pk
+        port = s.get("port")
+        if port:
+            url, description = iface_map.get((d.pk, port), (None, None))
+            s["nb_interface_url"] = url
+            s["port_description"] = description or None
+            ports = wireless_by_ip.get(s["switch"])
+            if ports is not None:
+                s["is_wireless"] = port in ports
+
+    _apply_active_now(sightings, vm_config)
+
+
 def _csv_cell(value):
     if value is None:
         return ""
@@ -129,8 +185,12 @@ def _enrich_mac_history(rows):
     }
     iface_map = {}
     if NbInterface and device_map:
-        for iface in NbInterface.objects.filter(device__in=device_map.values()).only("device_id", "name"):
-            iface_map[(iface.device_id, iface.name)] = iface.get_absolute_url()
+        # description comes along for free -- on a WLC the "port" is an AP radio
+        # ("<AP-MAC>.<radio>") and its description is the AP's name, which is the
+        # only place the AP is identified by anything other than its MAC.
+        qs = NbInterface.objects.filter(device__in=device_map.values())
+        for iface in qs.only("device_id", "name", "description"):
+            iface_map[(iface.device_id, iface.name)] = (iface.get_absolute_url(), iface.description)
     for r in rows:
         d = device_map.get(r.get("device_ip"))
         if d:
@@ -139,11 +199,14 @@ def _enrich_mac_history(rows):
             r["device_name"] = r.get("device_name") or d.name
             r["device_id"] = d.pk
             if r.get("port"):
-                r["nb_interface_url"] = iface_map.get((d.pk, r["port"]))
+                url, description = iface_map.get((d.pk, r["port"]), (None, None))
+                r["nb_interface_url"] = url
+                r["port_description"] = description or None
 
 
 def _apply_active_now(rows, vm_config):
-    """Overlay an "active now" (oper=up) flag onto mac-history rows via a
+    """Overlay an "active now" (oper=up) flag onto any list of dicts with
+    device_id/port keys (MAC History rows, search sightings, ...) via a
     single bulk VictoriaMetrics query — same source and no-fan-out approach
     as Down-Ports' oper status (see interface_search.apply_vm_oper_status).
 
@@ -334,6 +397,7 @@ class LensSearchView(PermissionRequiredMixin, View):
                         results[futures[future]] = future.result()
 
                 _enrich_results(results)
+                _enrich_sightings(results, backends, config.get("victoria_metrics", {}))
                 context["results"] = results
                 context["query"] = query
 
@@ -653,6 +717,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                         [
                             ("Device", lambda r: r.get("device_name") or r.get("device_ip")),
                             ("Port", lambda r: r.get("port")),
+                            ("Port Description", lambda r: r.get("port_description")),
                             ("MAC", lambda r: r.get("mac")),
                             ("VLAN", lambda r: r.get("vlan")),
                             ("Client IP", lambda r: r.get("client_ip")),
