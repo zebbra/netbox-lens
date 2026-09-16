@@ -5,7 +5,7 @@ class LensConfig(PluginConfig):
     name = "netbox_lens"
     verbose_name = "LENS"
     description = "Locate Endpoints across Network Systems"
-    version = "1.0.23"
+    version = "1.0.24"
     author = "Stefan Grosser"
     author_email = "stefan.grosser@zebbra.ch"
     base_url = "lens"
