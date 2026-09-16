@@ -178,9 +178,10 @@ def _apply_wireless(rows, backends):
     port as "<AP-MAC>.<radio-index>", so membership is a stable, direct
     match, not a guess).
 
-    Leaves is_wireless unset (rendered as "—") for devices with no radio
-    ports at all — those can't have wireless nodes, and it also covers
-    Netdisco calls that fail, so this never mislabels a row as wired.
+    Leaves is_wireless unset (rendered as "—") only when the Netdisco call
+    itself failed — a device confirmed to have zero radio ports (an
+    ordinary switch) gets is_wireless=False for every row, not "—", since
+    there's no ambiguity: nothing on it can be wireless.
     """
     if not backends:
         return
@@ -195,7 +196,7 @@ def _apply_wireless(rows, backends):
             wireless_by_device[ip] = future.result()
     for r in rows:
         ports = wireless_by_device.get(r.get("device_ip"))
-        if ports:
+        if ports is not None:
             r["is_wireless"] = r.get("port") in ports
 
 

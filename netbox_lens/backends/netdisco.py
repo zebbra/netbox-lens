@@ -373,14 +373,20 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
-    def wireless_ports(self, device_ip: str) -> set:
+    def wireless_ports(self, device_ip: str):
         """Radio port names for this device (device_port_wireless rows) — the
         cheapest wired-vs-wireless discriminator: a node's port is wireless
         iff it's in this set (WLC nodes report port as "<AP-MAC>.<radio>").
-        One call per device, no per-port fan-out."""
+        One call per device, no per-port fan-out.
+
+        Returns None if the call couldn't be answered (unreachable/misconfigured)
+        — caller should treat that as "unknown", not "wired". Returns a set on
+        success, which is legitimately empty for a plain switch with no radios
+        at all — that's a confirmed "everything here is wired", not "unknown".
+        """
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
-            return set()
+            return None
         try:
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/wireless_ports",
@@ -394,10 +400,10 @@ class NetdiscoBackend(LensBackend):
             resp.raise_for_status()
             data = resp.json() if resp.content else []
             if not isinstance(data, list):
-                return set()
+                return None
             return {p.get("port") for p in data if p.get("port")}
         except Exception:
-            return set()
+            return None
 
     def device_last_discover(self, device_ip: str):
         """Netdisco's device_port.up/up_admin are populated by its "discover"
