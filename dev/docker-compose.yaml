@@ -94,11 +94,14 @@ services:
       - ./discobox.yaml:/etc/discobox/discobox.yaml:ro
       - ../../bit-discobox/discobox.py:/app/discobox.py:ro
       - ../../bit-discobox/server.py:/app/server.py:ro
+      - ../../bit-discobox/typesync.py:/app/typesync.py:ro
+      # full local checkout (the image bakes only a pinned Cisco/Fortinet copy)
+      - ../../devicetype-library:/opt/devicetype-library:ro
 
   # ── NetBox ────────────────────────────────────────────────────────────────
 
   netbox:
-    image: ghcr.io/netbox-community/netbox:v4.4.7
+    image: ghcr.io/netbox-community/netbox:${NETBOX_VERSION:-v4.6.5}
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,11 +120,12 @@ services:
       retries: 10
       start_period: 60s
     command: >-
-      sh -c "echo /opt/netbox/netbox-lens > /opt/netbox/venv/lib/python3.12/site-packages/netbox-lens-dev.pth &&
+      sh -c "PTH=$$(ls -d /opt/netbox/venv/lib/python3.*/site-packages) &&
+             echo /opt/netbox/netbox-lens > \"$$PTH/netbox-lens-dev.pth\" &&
              exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
 
   netbox-worker:
-    image: ghcr.io/netbox-community/netbox:v4.4.7
+    image: ghcr.io/netbox-community/netbox:${NETBOX_VERSION:-v4.6.5}
     restart: on-failure
     depends_on:
       netbox:
@@ -131,7 +135,8 @@ services:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/plugins.py:ro
     command: >-
-      sh -c "echo /opt/netbox/netbox-lens > /opt/netbox/venv/lib/python3.12/site-packages/netbox-lens-dev.pth &&
+      sh -c "PTH=$$(ls -d /opt/netbox/venv/lib/python3.*/site-packages) &&
+             echo /opt/netbox/netbox-lens > \"$$PTH/netbox-lens-dev.pth\" &&
              exec /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker"
 
   postgres:

@@ -16,6 +16,8 @@ build/
 venv/
 env/
 
+local_*
+
 # Testing
 .tox/
 .pytest_cache/
