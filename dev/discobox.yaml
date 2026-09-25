@@ -24,9 +24,8 @@ custom_fields:
   neighbor_port: ~ #neighbor_port
   neighbor_device: ~ #neighbor_device
   neighbor_iface: ~ #neighbor_iface
+  touch: ~          # the dev NetBox has no netdisco_last_update field
 
 library:                      # DeviceType enrichment (/types/library); see seed-ap-test.py
   path: /opt/devicetype-library
   roles: [lwapp-ap]
-  device_types:
-    "9120AX": C9120AXI-E
