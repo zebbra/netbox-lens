@@ -5,13 +5,13 @@ Seed the local NetBox with a small, fake wireless-AP test set for discobox
 
 Idempotent: re-running only creates what's missing. --reset first deletes
 everything this script owns (devices ap-test-*, their DeviceTypes incl.
-templates, the test rack). The AP types mirror prod (2026-09), including
-its data gap: two types without part_number, so the WLC sync can't match
-C9120AXE-E/C9120AXI-E APs, keeps their type and logs "no DeviceType for
-model(s)". The fix is a data fix in NetBox (set the part_number), not an alias.
+templates, the test rack). The AP types mirror prod (2026-09): the WLC sync
+finds them by part_number; a model without a matching type keeps its type
+and is logged as "no DeviceType for model(s)" (fix the data in NetBox).
 
-  - 9120AX              part_number null (bossy), carries C9120AXE-E APs
-  - Catalyst 9120AXI-E  part_number null, library model name
+  - 9120AX              part_number C9120AXE-E (bossy name; the library has
+                        no AXE entry, /types/library maps it to C9120AXI-E)
+  - Catalyst 9120AXI-E  part_number C9120AXI-E, library model name
   - Catalyst CW9166I-E  part_number CW9166I-E, not in the library
   - ap-test-w051/w052   9120AX, unracked, neops-style comments, placeholder
                         interfaces main + vlan2
@@ -46,8 +46,8 @@ PREFIX = "ap-test-"
 RACK = "rack-ap-test"
 # model: (slug, part_number)
 TYPES = {
-    "9120AX": ("9120ax", None),
-    "Catalyst 9120AXI-E": ("catalyst-9120axi-e", None),
+    "9120AX": ("9120ax", "C9120AXE-E"),
+    "Catalyst 9120AXI-E": ("catalyst-9120axi-e", "C9120AXI-E"),
     "Catalyst CW9166I-E": ("catalyst-cw9166i-e", "CW9166I-E"),
     "AP-TEST-WLC": ("ap-test-wlc", None),
 }
