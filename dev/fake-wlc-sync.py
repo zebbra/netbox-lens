@@ -82,6 +82,18 @@ class FakeNetdisco:
                  "model": "", "serial": "", "pos": -1}]
         tree += [{"ip": WLC_IP, "index": 100 * pos, "parent": 1, "class": "chassis", "name": name,
                   "model": "C9800-80-K9", "serial": serial, "pos": pos} for name, pos, serial in HA_CHASSIS]
+        # components as the prod 9800 ENTITY tree shows them: the route processor
+        # and a PSU under chassis 2 (the active unit), a fan tray under chassis 1
+        tree += [
+            {"ip": WLC_IP, "index": 2000, "parent": 200, "class": "module", "name": "module R0",
+             "model": "C9800-80-K9", "serial": "FAK0000WLC2", "pos": 1},
+            {"ip": WLC_IP, "index": 201, "parent": 200, "class": "container", "name": "Chassis 2 Power Supply Bay 0",
+             "model": "", "serial": "", "pos": 4},
+            {"ip": WLC_IP, "index": 202, "parent": 201, "class": "powerSupply", "name": "Chassis 2 Power Supply Module 0",
+             "model": "C9800-AC-1100W", "serial": "FAKPSU00002", "pos": 0},
+            {"ip": WLC_IP, "index": 101, "parent": 100, "class": "fan", "name": "Chassis 1 Fan Tray",
+             "model": "C9800-80-K9-FAN", "serial": "", "pos": 0},
+        ]
         return tree + aps
 
     def get_device_ips(self, ip):
