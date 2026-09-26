@@ -5,7 +5,11 @@ with a fake Netdisco that reports the seed-ap-test.py APs the way a Cisco
 9800 WLC does (ap-class modules + "<radio MAC>.<slot>" radio ports; data
 shape from bit-discobox/tests/samples/wlc9800-*.json, all values fake).
 
-    python dev/seed-ap-test.py --reset && python dev/fake-wlc-sync.py
+    python dev/seed-ap-test.py --reset && python dev/fake-wlc-sync.py [--ha]
+
+--ha: the WLC reports as a 9800 HA SSO pair (ENTITY root "Multi Chassis
+System", chassis 1 + 2, both serials on the device, like prod), so discobox
+models it as ap-test-wlc1 + ap-test-wlc1-2 in a Virtual Chassis.
     (full round trip incl. /types/library: see seed-ap-test.py)
 
 Imports discobox from ../../bit-discobox, so local edits are tested directly.
@@ -43,10 +47,17 @@ def _desc(name, model, eth, radio, tag) -> str:
             f"Dot3 MAC {radio}; Ethernet MAC {eth}; Connected via SW-TEST-X01.example.com")
 
 
+HA_CHASSIS = [("Chassis 1", 1, "FAK0000WLC1"), ("Chassis 2", 2, "FAK0000WLC2")]
+
+
 class FakeNetdisco:
+    def __init__(self, ha: bool = False):
+        self.ha = ha
+
     def get_device(self, ip):
+        serial = " ".join(s for _, _, s in HA_CHASSIS) if self.ha else "FAK0000WLC1"
         return {"ip": WLC_IP, "name": "ap-test-wlc1", "dns": "ap-test-wlc1", "vendor": "cisco",
-                "model": "C9800-L-C-K9", "serial": "FAK0000WLC1", "os_ver": "17.15.5",
+                "model": "C9800-L-C-K9", "serial": serial, "os_ver": "17.15.5",
                 "description": "Cisco IOS Software [IOSXE], C9800 Software, Version 17.15.5"}
 
     def get_ports(self, ip):
@@ -61,10 +72,17 @@ class FakeNetdisco:
         return ports
 
     def get_modules(self, ip):
-        return [{"ip": WLC_IP, "class": "ap", "name": "AP", "model": model, "serial": serial,
-                 "sw_ver": "17.15.5.36", "type": "ap9120AXE", "index": i, "parent": 1, "pos": i,
-                 "description": _desc(name, model, eth, radio, tag)}
-                for i, (name, model, serial, eth, radio, slots, tag) in enumerate(APS, start=10)]
+        aps = [{"ip": WLC_IP, "class": "ap", "name": "AP", "model": model, "serial": serial,
+                "sw_ver": "17.15.5.36", "type": "ap9120AXE", "index": i, "parent": 1, "pos": i,
+                "description": _desc(name, model, eth, radio, tag)}
+               for i, (name, model, serial, eth, radio, slots, tag) in enumerate(APS, start=10)]
+        if not self.ha:
+            return aps
+        tree = [{"ip": WLC_IP, "index": 1, "parent": 0, "class": "stack", "name": "Multi Chassis System",
+                 "model": "", "serial": "", "pos": -1}]
+        tree += [{"ip": WLC_IP, "index": 100 * pos, "parent": 1, "class": "chassis", "name": name,
+                  "model": "C9800-80-K9", "serial": serial, "pos": pos} for name, pos, serial in HA_CHASSIS]
+        return tree + aps
 
     def get_device_ips(self, ip):
         return []
@@ -94,7 +112,7 @@ def main() -> int:
         device_type_aliases=types_cfg.get("device_aliases"),   # same aliases as the dev discobox, if any
     )
     result = sync_device(
-        WLC_IP, FakeNetdisco(), nb, sync_mac=True, sync_ip=False, sync_modules=True,
+        WLC_IP, FakeNetdisco(ha="--ha" in sys.argv), nb, sync_mac=True, sync_ip=False, sync_modules=True,
         sync_sfp=False, sync_poe=False, housekeeping=True,
         cf_os_version=None, cf_os_name=None, cf_os_release=None, cf_stack_members=None, cf_touch=None,
         cf_neighbor_text=None, cf_neighbor_port=None, cf_neighbor_device=None, cf_neighbor_iface=None,

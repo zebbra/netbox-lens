@@ -87,6 +87,9 @@ def _get_or_create(endpoint, lookup: dict, **create):
 
 
 def reset(nb) -> None:
+    for vc in nb.dcim.virtual_chassis.filter(name__isw=PREFIX):
+        vc.delete()      # Netbox detaches the members (incl. the master)
+        print(f"deleted virtual chassis {vc.name}")
     for dev in nb.dcim.devices.filter(name__isw=PREFIX):
         dev.delete()
         print(f"deleted device {dev.name}")
