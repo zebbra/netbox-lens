@@ -29,3 +29,6 @@ custom_fields:
 library:                      # DeviceType enrichment (/types/library); see seed-ap-test.py
   path: /opt/devicetype-library
   roles: [lwapp-ap]
+
+reconcile:                    # the dev NetBox only has these roles (default adds router/firewall/appliance)
+  roles: [switch, lwapp-ctr]
