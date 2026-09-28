@@ -1,11 +1,44 @@
 import json
 import os
+import re
 from datetime import date
 
 import requests
 
 from .base import BackendStatus, LensBackend, SearchResult
 
+# snmp_polling_timeout is the SNMP modulator's whole-device Prometheus scrape
+# budget ("20s"/"2m"/"5m"), not a per-request timeout — passed straight
+# through, "2m" would make Netdisco wait 120s on every single SNMP request.
+# So a discover gets a twelfth of it, clamped to 10–20s: 10s is what a big
+# 9800 WLC needs (it fails at 3s), 20s caps the slowest boxes. Empty or
+# unparseable falls back to the floor. Same constants as discobox, which
+# derives its reconcile discovers the same way — keep the two in step.
+SNMP_TIMEOUT_DIVISOR = 12
+SNMP_TIMEOUT_FLOOR_US = 10_000_000
+SNMP_TIMEOUT_CAP_US = 20_000_000
+_TIMEOUT_UNITS_US = {"us": 1, "ms": 1_000, "s": 1_000_000, "m": 60_000_000, "h": 3_600_000_000}
+
+
+def parse_snmp_timeout_us(value: str | None) -> int | None:
+    """NetBox snmp_polling_timeout ("30s", "3m", "500ms", bare number = s) to
+    microseconds. Copy of discobox's _parse_snmp_timeout_us (separate
+    services, no shared package); None if empty or unparseable."""
+    if not value:
+        return None
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(us|ms|s|m|h)?", str(value).strip(), re.IGNORECASE)
+    if not m:
+        return None
+    return int(float(m.group(1)) * _TIMEOUT_UNITS_US[(m.group(2) or "s").lower()])
+
+
+def discover_snmp_timeout_us(value: str | None) -> int:
+    """Netdisco snmptimeout (µs, per SNMP request) for a discover, derived
+    from the scrape budget in snmp_polling_timeout — see the constants above."""
+    budget_us = parse_snmp_timeout_us(value)
+    if budget_us is None:
+        return SNMP_TIMEOUT_FLOOR_US
+    return max(SNMP_TIMEOUT_FLOOR_US, min(SNMP_TIMEOUT_CAP_US, budget_us // SNMP_TIMEOUT_DIVISOR))
 
 class NetdiscoBackend(LensBackend):
     name = "netdisco"
@@ -574,13 +607,75 @@ class NetdiscoBackend(LensBackend):
         except Exception as e:
             return False, str(e)
 
-    def trigger_discover(self, device_ip: str, auth_profile: str | None = None) -> tuple[bool, str]:
+    def device_jobs(self, device_ip: str, limit: int = 50) -> list | None:
+        """This device's jobs in Netdisco's admin queue, newest first
+        (GET /api/v1/queue/jobs — api_admin role, so the admin token).
+        Netdisco keeps status "queued" while a backend runs the job; it's
+        only distinguishable from waiting by started_stamp being set.
+
+        Returns None if the call couldn't be answered, [] if there are none.
+        """
+        base_url = self.config.get("url", "").rstrip("/")
+        admin_token = os.environ.get("LENS_NETDISCO_ADMIN_TOKEN", self.config.get("admin_token", ""))
+        if not base_url or not admin_token:
+            return None
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/queue/jobs",
+                headers={"Authorization": f"Bearer {admin_token}", "Accept": "application/json"},
+                params={"device": device_ip, "limit": limit},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+                allow_redirects=False,
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else []
+            if not isinstance(data, list):
+                return None
+        except Exception:
+            return None
+        return [
+            {
+                "job": j.get("job"),
+                "action": j.get("action"),
+                "status": "running" if j.get("status") == "queued" and j.get("started_stamp") else j.get("status"),
+                "port": j.get("port"),
+                "subaction": j.get("subaction"),
+                "entered": j.get("entered_stamp"),
+                "started": j.get("started_stamp"),
+                "finished": j.get("finished_stamp"),
+                "duration": j.get("duration"),
+                "backend": j.get("backend"),
+                "username": j.get("username"),
+                "log": j.get("log"),
+            }
+            for j in data
+        ]
+
+    def trigger_discover(self, device_ip: str, auth_profile: str | None = None,
+                         snmp_timeout: str | None = None) -> tuple[bool, str]:
+        # Keys in a job's extra override Netdisco settings for that job only
+        # (Util/Configuration.pm parse_params_to_config). Same shape as
+        # discobox's reconcile discovers (enqueue_discover), so a manual
+        # discover behaves like the automatic one.
         # device_auth_tag_hint narrows Netdisco's SNMP credential attempts to
         # the matching tag in its own device_auth config, instead of trying
         # every configured community/credential in turn. An unknown/stale
         # hint is harmless — Netdisco falls back to trying all of them.
-        extra = {"device_auth_tag_hint": auth_profile} if auth_profile else None
-        return self._trigger_job("discover", device_ip, extra=extra)
+        timeout_us = discover_snmp_timeout_us(snmp_timeout)
+        extra = {"snmptimeout": timeout_us, "skip_neighbor_queue": True}
+        if auth_profile:
+            extra["device_auth_tag_hint"] = auth_profile
+        ok, message = self._trigger_job("discover", device_ip, extra=extra)
+        if ok:
+            if parse_snmp_timeout_us(snmp_timeout) is not None:
+                source = f"from {snmp_timeout}"
+            elif snmp_timeout:
+                source = f"default, {snmp_timeout!r} not parseable"
+            else:
+                source = "default"
+            message = message.rstrip(".") + f" (tag {auth_profile or '—'}, timeout {timeout_us / 1_000_000:g}s {source})."
+        return ok, message
 
     def trigger_macsuck(self, device_ip: str) -> tuple[bool, str]:
         return self._trigger_job("macsuck", device_ip)

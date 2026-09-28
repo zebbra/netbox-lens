@@ -1,0 +1,23 @@
+{% extends 'generic/object.html' %}
+{% load i18n %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div id="lens-jobs-body"
+           hx-get="{% url 'plugins:netbox_lens:device_jobs_data' pk=object.pk %}"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <div class="card-header">
+          <h5 class="mb-0">{% trans "Netdisco Jobs" %}</h5>
+        </div>
+        <div class="card-body text-muted d-flex align-items-center gap-2">
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          {% trans "Loading from Netdisco…" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

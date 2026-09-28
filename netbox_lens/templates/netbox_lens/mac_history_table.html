@@ -57,7 +57,7 @@
           {{ row.port|default:"—" }}
           {% endif %}
           {% if row.port_description %}
-          <br /><span class="text-muted small">{{ row.port_description }}</span>
+          <br /><span class="text-muted small">{% if row.port_device_url %}<a href="{{ row.port_device_url }}" class="text-muted">{{ row.port_description }}</a>{% else %}{{ row.port_description }}{% endif %}</span>
           {% endif %}
         </td>
         <td>

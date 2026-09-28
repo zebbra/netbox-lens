@@ -1,0 +1,299 @@
+{% load i18n %}
+{% load lens_filters %}
+<div id="lens-stats" class="mb-3" hx-swap-oob="true">
+{% if lens_stats %}
+    <div class="d-flex gap-4">
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.macs }}</div>
+        <div class="text-muted small">{% trans "Active MACs" %}</div>
+      </div>
+      {% if lens_stats.aps is not None %}
+      <div class="text-center" title="{% trans 'From NetBox, as of the last discobox WLC sync' %}">
+        <div class="fs-4 fw-bold">{{ lens_stats.aps }}</div>
+        <div class="text-muted small">{% trans "APs" %}</div>
+      </div>
+      {% endif %}
+      <div class="text-center"{% if lens_stats.aps is not None %} title="{% trans 'From NetBox, as of the last discobox WLC sync' %}"{% endif %}>
+        <div class="fs-4 fw-bold">{{ lens_stats.ports }}</div>
+        <div class="text-muted small">{% trans "Ports" %}</div>
+      </div>
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.vlans }}</div>
+        <div class="text-muted small">{% trans "VLANs" %}</div>
+      </div>
+      <div class="text-center">
+        <div class="fs-4 fw-bold">{{ lens_stats.neighbors }}</div>
+        <div class="text-muted small">{% trans "Neighbors" %}</div>
+      </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if lens_stats %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>{% trans "LENS Detail" %}</strong>
+    <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox. SNMP Modulator: writes polling config.' %}"></i>
+  </div>
+  <div class="card-body">
+    {% if not lens_found %}
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-muted">{% trans "Device not found in" %} {{ lens_backends|join:", " }}.</span>
+      {% if lens_can_trigger %}
+      <form method="post" action="{% url 'plugins:netbox_lens:discover' pk=lens_device_pk %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                title="{% trans 'Discover via SNMP, using this device’s snmp_auth_profile and snmp_polling_timeout' %}">
+          <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Discover" %}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    <hr class="my-3">
+    {% endif %}
+    <div class="row">
+      <div class="col-4">
+        <table class="table table-hover attr-table table-sm mb-2">
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Linked IP" %}</th>
+            <td>
+              {{ lens_device_ip }}
+              {% for label, url in lens_web_links %}
+              <a href="{{ url }}" target="_blank" rel="noopener" title="{% trans "Open in" %} {{ label }}"><i class="mdi mdi-open-in-new" aria-hidden="true"></i></a>
+              {% endfor %}
+            </td>
+          </tr>
+          {% for label, summary in lens_summaries %}
+          {% if summary.model %}
+          <tr><th scope="row" class="text-nowrap">{% trans "Model" %}</th><td>{{ summary.model }}</td></tr>
+          {% endif %}
+          {% if summary.os %}
+          <tr><th scope="row" class="text-nowrap">{% trans "OS" %}</th><td>{{ summary.os }}</td></tr>
+          {% endif %}
+          {% if summary.os_ver %}
+          <tr><th scope="row" class="text-nowrap">{% trans "Release" %}</th><td>{{ summary.os_ver }}</td></tr>
+          {% endif %}
+          {% endfor %}
+        </table>
+      </div>
+      <div class="col-8">
+        <table class="table table-hover attr-table table-sm mb-2">
+          {% for label, summary in lens_summaries %}
+          {% if summary.first_discovered %}
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "First discovered" %}</th>
+            <td><span title="{{ summary.first_discovered|lens_absolute }}">{{ summary.first_discovered|lens_relative }}</span></td>
+            <td></td>
+          </tr>
+          {% endif %}
+          {% if "last_discover" in summary %}
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Last discover" %}</th>
+            <td><span title="{{ summary.last_discover|lens_absolute }}">{{ summary.last_discover|lens_relative|default:"—" }}</span></td>
+            <td class="text-end text-nowrap">
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:discover' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                        title="{% trans 'Rediscover via SNMP' %}">
+                  <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Discover" %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+          {% if "last_macsuck" in summary %}
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Last macsuck" %}</th>
+            <td><span title="{{ summary.last_macsuck|lens_absolute }}">{{ summary.last_macsuck|lens_relative|default:"—" }}</span></td>
+            <td class="text-end text-nowrap">
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:macsuck' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                        title="{% trans 'Fetch MAC table via SNMP' %}">
+                  <i class="mdi mdi-table-network" aria-hidden="true"></i> {% trans "Macsuck" %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+          {% if "last_arpnip" in summary %}
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Last arpnip" %}</th>
+            <td><span title="{{ summary.last_arpnip|lens_absolute }}">{{ summary.last_arpnip|lens_relative|default:"—" }}</span></td>
+            <td class="text-end text-nowrap">
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:arpnip' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2"
+                        title="{% trans 'Fetch ARP table via SNMP' %}">
+                  <i class="mdi mdi-lan-connect" aria-hidden="true"></i> {% trans "Arpnip" %}
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Bossy" %}</th>
+            <td><span title="{{ lens_bossy_last_updated|lens_absolute }}">{{ lens_bossy_last_updated|lens_relative|default:"—" }}</span></td>
+            <td></td>
+          </tr>
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Netdisco" %}</th>
+            <td><span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative|default:"—" }}</span></td>
+            <td class="text-end text-nowrap">
+              {% if lens_can_trigger %}
+              <form method="post" action="{% url 'plugins:netbox_lens:sync' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="force" value="false">
+                <button type="submit" class="btn btn-sm btn-outline-success py-0 px-2"
+                        title="{% trans 'Sync Netdisco → NetBox (DB only)' %}">
+                  <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Sync" %}
+                </button>
+              </form>
+              {% if lens_is_superuser %}
+              <form method="post" action="{% url 'plugins:netbox_lens:sync' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="force" value="true">
+                <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2"
+                        title="{% trans 'Force sync, skip cooldown (admin)' %}">
+                  <i class="mdi mdi-sync-alert" aria-hidden="true"></i>
+                </button>
+              </form>
+              {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "Inventory" %}</th>
+            <td class="text-muted">—</td>
+            <td class="text-end text-nowrap">
+              {% if lens_can_trigger %}
+              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-bs-toggle="modal"
+                      data-bs-target="#lens-rebuild-modal"
+                      hx-post="{% url 'plugins:netbox_lens:rebuild_inventory' pk=lens_device_pk %}"
+                      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                      hx-vals='{"dry_run": "true"}'
+                      hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-trigger="click once"
+                      title="{% trans 'Preview — dry run, nothing applied' %}">
+                <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Rebuild Inventory" %}
+              </button>
+              <form method="post" action="{% url 'plugins:netbox_lens:rebuild_now' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-danger py-0 px-1"
+                        title="{% trans 'Apply now — runs in background' %}">
+                  <i class="mdi mdi-delete-alert" aria-hidden="true"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="text-nowrap">{% trans "SNMP Modulator" %}</th>
+            <td><span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative|default:"—" }}</span></td>
+            <td class="text-end text-nowrap">
+              {% if lens_can_trigger %}
+              <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
+                      data-bs-target="#lens-probe-modal"
+                      hx-post="{% url 'plugins:netbox_lens:probe' pk=lens_device_pk %}"
+                      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                      hx-vals='{"dry_run": "true"}'
+                      hx-target="#lens-probe-body" hx-swap="innerHTML" hx-trigger="click once"
+                      title="{% trans 'Preview — dry run, nothing applied' %}">
+                <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Preview" %}
+              </button>
+              <form method="post" action="{% url 'plugins:netbox_lens:update_modules' pk=lens_device_pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-primary py-0 px-1"
+                        title="{% trans 'Apply now — runs in background' %}">
+                  <i class="mdi mdi-content-save-check" aria-hidden="true"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if lens_neighbors %}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-lan-connect" aria-hidden="true"></i>
+    <strong>{% trans "Neighbors" %}</strong>
+    <span class="badge text-bg-secondary">{{ lens_neighbors|length }}</span>
+  </div>
+  <table class="table table-hover table-headings mb-0">
+    <thead>
+      <tr>
+        <th>{% trans "Local Port" %}</th>
+        <th>{% trans "Neighbor" %}</th>
+        <th>{% trans "Remote Port" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for n in lens_neighbors %}
+      <tr>
+        <td>
+          {% if n.nb_local_port_url %}
+          <a href="{{ n.nb_local_port_url }}">{{ n.port|default:"—" }}</a>
+          {% else %}
+          {{ n.port|default:"—" }}
+          {% endif %}
+        </td>
+        <td>
+          {% if n.nb_device_url %}
+          <a href="{{ n.nb_device_url }}">{{ n.nb_device_name }}</a>
+          {% with rid=n.remote_id|default:n.remote_ip %}
+          {% if rid and rid != n.nb_device_name %}<span class="text-muted small ms-1">{{ rid }}</span>{% endif %}
+          {% endwith %}
+          {% else %}
+          {{ n.remote_id|default:n.remote_ip|default:"—" }}
+          {% endif %}
+        </td>
+        <td>{{ n.remote_port|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if lens_can_trigger %}
+<div class="modal fade" id="lens-rebuild-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% trans "Rebuild Inventory" %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lens-rebuild-body">
+        <div class="text-muted">{% trans "Loading preview…" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="lens-probe-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% trans "SNMP Modulator" %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lens-probe-body">
+        <div class="text-muted">{% trans "Loading preview…" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}

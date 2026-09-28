@@ -1,0 +1,15 @@
+{% load i18n %}
+{# Shell only: the Netdisco lookup runs in interface_nodes_data via htmx, after the interface page has rendered. #}
+<div hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=lens_interface_pk %}" hx-trigger="load" hx-swap="outerHTML">
+  <div class="card mb-3">
+    <div class="card-header d-flex align-items-center gap-2">
+      <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+      <strong>LENS</strong>
+      <span class="text-muted">— {{ lens_port }}</span>
+    </div>
+    <div class="card-body text-muted small d-flex align-items-center gap-2">
+      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      {% trans "Loading from Netdisco…" %}
+    </div>
+  </div>
+</div>

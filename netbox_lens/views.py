@@ -23,6 +23,7 @@ from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
+from .template_content import apply_ap_radio_links, device_panel_context, device_panel_enabled, interface_nodes_context
 from .victoria_metrics import fetch_interface_updown_state
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
@@ -110,14 +111,14 @@ def _enrich_sightings(results, backends, vm_config):
     sightings = [s for r in results or [] for s in (r.sightings or [])]
     ips = {s["switch"] for s in sightings if s.get("switch")}
     if not ips:
-        return
+        return apply_ap_radio_links(sightings)
     q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
     device_map = {
         str(d.primary_ip4.address.ip): d
         for d in NbDevice.objects.filter(q).select_related("primary_ip4")
     }
     if not device_map:
-        return
+        return apply_ap_radio_links(sightings)
 
     iface_map = {}
     if NbInterface:
@@ -147,6 +148,7 @@ def _enrich_sightings(results, backends, vm_config):
             ports = wireless_by_ip.get(s["switch"])
             if ports is not None:
                 s["is_wireless"] = port in ports
+    apply_ap_radio_links(sightings)
 
     _apply_active_now(sightings, vm_config)
 
@@ -177,7 +179,7 @@ def _enrich_mac_history(rows):
         return
     ips = {r["device_ip"] for r in rows if r.get("device_ip")}
     if not ips:
-        return
+        return apply_ap_radio_links(rows)
     q = reduce(operator.or_, (Q(primary_ip4__address__net_host=ip) for ip in ips))
     device_map = {
         str(d.primary_ip4.address.ip): d
@@ -185,9 +187,8 @@ def _enrich_mac_history(rows):
     }
     iface_map = {}
     if NbInterface and device_map:
-        # description comes along for free -- on a WLC the "port" is an AP radio
-        # ("<AP-MAC>.<radio>") and its description is the AP's name, which is the
-        # only place the AP is identified by anything other than its MAC.
+        # description comes along for free. A WLC's radio "ports" have no
+        # interface here any more -- apply_ap_radio_links resolves those to the AP.
         qs = NbInterface.objects.filter(device__in=device_map.values())
         for iface in qs.only("device_id", "name", "description"):
             iface_map[(iface.device_id, iface.name)] = (iface.get_absolute_url(), iface.description)
@@ -202,6 +203,7 @@ def _enrich_mac_history(rows):
                 url, description = iface_map.get((d.pk, r["port"]), (None, None))
                 r["nb_interface_url"] = url
                 r["port_description"] = description or None
+    apply_ap_radio_links(rows)
 
 
 def _apply_active_now(rows, vm_config):
@@ -426,9 +428,8 @@ class LensTriggerJobView(PermissionRequiredMixin, View):
 
         kwargs = {}
         if self.job_method == "trigger_discover":
-            auth_profile = device.cf.get("snmp_auth_profile")
-            if auth_profile:
-                kwargs["auth_profile"] = auth_profile
+            kwargs["auth_profile"] = device.cf.get("snmp_auth_profile") or None
+            kwargs["snmp_timeout"] = device.cf.get("snmp_polling_timeout") or None
 
         for backend in backends:
             success, message = getattr(backend, self.job_method)(ip, **kwargs)
@@ -937,6 +938,109 @@ if NbDevice:
         )
 
 
+MAX_JOB_POLLS = 60  # at 5s each: 5 minutes
+
+
+if NbDevice:
+    @register_model_view(NbDevice, name="lens_jobs", path="lens-jobs")
+    class DeviceNetdiscoJobsView(ObjectView):
+        """Tab shell only, same as DeviceMacArpView: the Netdisco call happens
+        in LensDeviceJobsDataView via htmx after the page has rendered."""
+        queryset = NbDevice.objects.all()
+        additional_permissions = ["netbox_lens.jobs_lens"]
+        template_name = "netbox_lens/device_jobs.html"
+        tab = ViewTab(
+            label="Netdisco Jobs",
+            visible=lambda device: device.primary_ip4_id is not None and device_panel_enabled(
+                device, settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            ),
+            permission="netbox_lens.jobs_lens",
+            weight=2100,
+        )
+
+
+if NbDevice:
+    from dcim.filtersets import DeviceFilterSet
+    from dcim.forms import DeviceFilterForm
+    from dcim.tables import DeviceTable
+    from netbox.views.generic import ObjectChildrenView
+
+    def _wlc_controller_filter(device):
+        cf_name = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("wlc_controller_cf") or "controller"
+        return {f"custom_field_data__{cf_name}": device.pk}
+
+    @register_model_view(NbDevice, name="lens_aps", path="lens-aps")
+    class DeviceControllerAPsView(ObjectChildrenView):
+        """The APs discobox's WLC sync assigned to this controller (object CF
+        controller -> this device), as a regular NetBox device table.
+        No badge: counting would run on every WLC page load."""
+        queryset = NbDevice.objects.all()
+        child_model = NbDevice
+        table = DeviceTable
+        filterset = DeviceFilterSet
+        filterset_form = DeviceFilterForm
+        tab = ViewTab(
+            label="APs",
+            visible=lambda device: bool(device.role) and device.role.slug == "lwapp-ctr",
+            permission="dcim.view_device",
+            weight=2050,
+        )
+
+        def get_children(self, request, parent):
+            return NbDevice.objects.restrict(request.user, "view").filter(**_wlc_controller_filter(parent))
+
+
+class LensDeviceJobsDataView(PermissionRequiredMixin, View):
+    """htmx partial backing DeviceNetdiscoJobsView. Re-polls itself while any
+    job is still queued/running, and stops once they've all finished — or
+    after MAX_JOB_POLLS rounds, since a job stuck in the queue (no backend
+    picking it up) would otherwise keep an open tab polling forever."""
+    permission_required = "netbox_lens.jobs_lens"
+
+    def get(self, request, pk):
+        try:
+            polls = int(request.GET.get("polls", 0))
+        except ValueError:
+            polls = 0
+        device = get_object_or_404(NbDevice, pk=pk)
+        if not device_panel_enabled(device, settings.PLUGINS_CONFIG.get("netbox_lens", {})):
+            return HttpResponse("")
+        ip = _device_ip(device)
+        jobs = None
+        if ip:
+            backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {}))
+            if backends:
+                jobs = backends[0].device_jobs(ip)
+        return render(request, "netbox_lens/device_jobs_data.html", {
+            "jobs": jobs,
+            "lens_device_ip": ip,
+            "lens_device_pk": device.pk,
+            "pending": any(j["status"] in ("queued", "running") for j in jobs or []),
+            "next_poll": polls + 1 if polls < MAX_JOB_POLLS else None,
+        })
+
+
+class LensDevicePanelDataView(PermissionRequiredMixin, View):
+    """htmx partial for the device page's LENS panel: stats, LENS Detail and
+    neighbors — the Netdisco-backed part, loaded after the page itself."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request, pk):
+        device = get_object_or_404(NbDevice.objects.select_related("role", "primary_ip4"), pk=pk)
+        if not device_panel_enabled(device, settings.PLUGINS_CONFIG.get("netbox_lens", {})):
+            return HttpResponse("")
+        return render(request, "netbox_lens/device_panel_data.html", device_panel_context(device, request.user))
+
+
+class LensInterfaceNodesDataView(PermissionRequiredMixin, View):
+    """htmx partial for the interface page's LENS panel (active MACs on the port)."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request, pk):
+        iface = get_object_or_404(NbInterface.objects.select_related("device__primary_ip4"), pk=pk)
+        return render(request, "netbox_lens/interface_nodes_data.html", interface_nodes_context(iface))
+
+
 class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
     """htmx partial backing DeviceMacArpView's tab — the actual Netdisco
     fetch, deferred so it can't block the tab's own page load."""
@@ -953,14 +1057,16 @@ class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
             iface_map = {}
             if NbInterface:
                 iface_map = {
-                    iface.name: iface.get_absolute_url()
-                    for iface in NbInterface.objects.filter(device=device).only("name")
+                    iface.name: (iface.get_absolute_url(), iface.description)
+                    for iface in NbInterface.objects.filter(device=device).only("device_id", "name", "description")
                 }
             for r in rows:
                 r["device_name"] = device.name
                 r["area"] = device.cf.get("service_group")
                 if r.get("port"):
-                    r["nb_interface_url"] = iface_map.get(r["port"])
+                    url, description = iface_map.get(r["port"], (None, None))
+                    r["nb_interface_url"] = url
+                    r["port_description"] = description or None
             summary = {}
             if backends:
                 summary = backends[0].device_summary(ip) or {}

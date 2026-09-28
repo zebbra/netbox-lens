@@ -1,0 +1,63 @@
+{% load i18n %}
+{% load lens_filters %}
+{% if pending and next_poll %}
+{# Re-poll while something is still queued/running; the swapped-in response drops this once all jobs are done. #}
+<div hidden hx-get="{% url 'plugins:netbox_lens:device_jobs_data' pk=lens_device_pk %}?polls={{ next_poll }}"
+     hx-trigger="load delay:5s" hx-target="#lens-jobs-body" hx-swap="innerHTML"></div>
+{% endif %}
+<div class="card-header d-flex align-items-center flex-wrap gap-2">
+  <h5 class="mb-0 me-2">{% trans "Netdisco Jobs" %}</h5>
+  {% if jobs is not None %}<span class="badge text-bg-secondary">{{ jobs|length }}</span>{% endif %}
+  {% if pending and next_poll %}
+  <span class="text-muted small ms-auto d-flex align-items-center gap-1">
+    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    {% trans "Refreshing every 5s while jobs are pending" %}
+  </span>
+  {% elif pending %}
+  <span class="text-muted small ms-auto">{% trans "Stopped refreshing — reload the tab to check again." %}</span>
+  {% endif %}
+</div>
+{% if not lens_device_ip %}
+<div class="card-body text-muted">{% trans "This device has no primary IPv4 address." %}</div>
+{% elif jobs is None %}
+<div class="card-body text-danger">{% trans "Could not load jobs from Netdisco (unreachable, or no admin token configured)." %}</div>
+{% elif not jobs %}
+<div class="card-body text-muted">{% trans "Netdisco has no jobs for this device." %}</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-hover table-sm mb-0">
+    <thead>
+      <tr>
+        <th>{% trans "Entered" %}</th>
+        <th>{% trans "Action" %}</th>
+        <th>{% trans "Status" %}</th>
+        <th>{% trans "Duration" %}</th>
+        <th>{% trans "Parameters" %}</th>
+        <th>{% trans "User" %}</th>
+        <th>{% trans "Backend" %}</th>
+        <th>{% trans "Log" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td class="text-nowrap"><span title="{{ j.entered|lens_absolute }}">{{ j.entered|lens_relative|default:"—" }}</span></td>
+        <td>{{ j.action }}{% if j.port %} <span class="text-muted">{{ j.port }}</span>{% endif %}</td>
+        <td>
+          {% if j.status == "done" %}<span class="badge text-bg-success">done</span>
+          {% elif j.status == "error" %}<span class="badge text-bg-danger">error</span>
+          {% elif j.status == "running" %}<span class="badge text-bg-primary">running</span>
+          {% elif j.status == "queued" %}<span class="badge text-bg-secondary">queued</span>
+          {% else %}<span class="badge text-bg-warning">{{ j.status }}</span>{% endif %}
+        </td>
+        <td class="text-nowrap">{{ j.duration|default:"—" }}</td>
+        <td class="font-monospace small text-break">{{ j.subaction|default:"—" }}</td>
+        <td>{{ j.username|default:"—" }}</td>
+        <td class="small">{{ j.backend|default:"—" }}</td>
+        <td class="small text-break">{{ j.log|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

@@ -3,7 +3,7 @@ from django.db import models
 
 class Lens(models.Model):
     """Carries custom permissions for the LENS plugin. Never actually written to —
-    it exists only so NetBox has a model to hang the use_lens/trigger_lens
+    it exists only so NetBox has a model to hang the use_lens/trigger_lens/jobs_lens
     permissions off of.
 
     Named `Lens` (not e.g. `LensPermissions`) so its model_name is exactly "lens" —
@@ -26,4 +26,5 @@ class Lens(models.Model):
         permissions = (
             ("use_lens", "Can access LENS endpoint lookup"),
             ("trigger_lens", "Can trigger Netdisco discovery jobs"),
+            ("jobs_lens", "Can view a device's Netdisco job queue"),
         )
