@@ -51,13 +51,19 @@
         </td>
         {% endif %}
         <td>
+          {% if row.port_device_url %}
+          {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot goes underneath #}
+          <a href="{{ row.port_device_url }}">{{ row.port_description }}</a>
+          <br /><span class="text-muted small">{% if row.nb_interface_url %}<a href="{{ row.nb_interface_url }}" class="text-muted">{{ row.port }}</a>{% else %}{{ row.port }}{% endif %}</span>
+          {% else %}
           {% if row.nb_interface_url %}
           <a href="{{ row.nb_interface_url }}">{{ row.port|default:"—" }}</a>
           {% else %}
           {{ row.port|default:"—" }}
           {% endif %}
           {% if row.port_description %}
-          <br /><span class="text-muted small">{% if row.port_device_url %}<a href="{{ row.port_device_url }}" class="text-muted">{{ row.port_description }}</a>{% else %}{{ row.port_description }}{% endif %}</span>
+          <br /><span class="text-muted small">{{ row.port_description }}</span>
+          {% endif %}
           {% endif %}
         </td>
         <td>

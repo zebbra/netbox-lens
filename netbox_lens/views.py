@@ -3,6 +3,7 @@ import logging
 import operator
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, timedelta
 from functools import reduce
 
 from django.apps import apps
@@ -19,6 +20,7 @@ from utilities.views import ViewTab, register_model_view
 
 from .arp_history import build_arp_history
 from .backends import get_backends
+from .backends.base import SearchResult
 from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
@@ -369,13 +371,12 @@ class LensSearchView(PermissionRequiredMixin, View):
 
         if form.is_valid():
             query = form.cleaned_data["q"]
-            partial = form.cleaned_data.get("partial", False)
+            wildcard = "*" in query or "%" in query
             date_from = form.cleaned_data.get("date_from")
             date_to = form.cleaned_data.get("date_to")
-            # Partial (wildcard) matches without an explicit date range stay
-            # active-only — combining partial with a full archived scan is
-            # expensive on Netdisco's side for broad queries. But if the user
-            # explicitly picked a range, honor it even in partial mode.
+            # Searches without an explicit date range stay active-only — a
+            # wildcard combined with a full archived scan is expensive on
+            # Netdisco's side. An explicitly picked range is honored.
             since = date_from.isoformat() if date_from else None
             until = date_to.isoformat() if date_to else None
             archived = bool(since)
@@ -392,7 +393,7 @@ class LensSearchView(PermissionRequiredMixin, View):
                 results = [None] * len(backends)
                 with ThreadPoolExecutor() as executor:
                     futures = {
-                        executor.submit(b.search, query, partial, archived, since, until): i
+                        executor.submit(b.search, query, False, archived, since, until): i
                         for i, b in enumerate(backends)
                     }
                     for future in as_completed(futures):
@@ -402,11 +403,36 @@ class LensSearchView(PermissionRequiredMixin, View):
                 _enrich_sightings(results, backends, config.get("victoria_metrics", {}))
                 context["results"] = results
                 context["query"] = query
+                context["query_note"] = form.cleaned_data.get("q_note")
+                context["wildcard_active_only"] = wildcard and not archived
+                context["archived"] = archived
+                context["history_from"] = (date.today() - timedelta(days=30)).isoformat()
+                context["history_to"] = date.today().isoformat()
 
         if htmx_partial(request):
             return render(request, "netbox_lens/search_results.html", context)
 
         return render(request, "netbox_lens/search.html", context)
+
+
+class LensSearchHistoryView(PermissionRequiredMixin, View):
+    """htmx partial behind "Load history": the archived port sightings of the
+    MACs a search found, replacing that backend's sightings block."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+        backend = next((b for b in get_backends(config) if b.name == request.GET.get("backend")), None)
+        macs = [m for m in request.GET.getlist("mac") if m]
+        if not backend or not macs:
+            return HttpResponse("")
+        sightings, error = backend.sighting_history(macs)
+        result = SearchResult(backend=backend.name, label=backend.label, icon=backend.icon,
+                              sightings=sightings, history_macs=macs)
+        _enrich_sightings([result], [backend], config.get("victoria_metrics", {}))
+        return render(request, "netbox_lens/search_sightings.html", {
+            "backend": result, "history": True, "history_error": error,
+        })
 
 
 class LensTriggerJobView(PermissionRequiredMixin, View):

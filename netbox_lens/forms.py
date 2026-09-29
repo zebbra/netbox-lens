@@ -12,6 +12,51 @@ IP_RE = re.compile(
     r'|^[0-9a-fA-F:]+(/\d+)?$'                  # IPv6
 )
 
+# Fragments Netdisco can't match on their own: a wildcard search is a plain
+# ILIKE on mac::text (always aa:bb:cc:dd:ee:ff), and it treats only complete
+# IPv4 addresses / CIDRs as IPs. interpret_query rewrites these into a form
+# it does match. Everything else searches as typed, with "*" / "%" as the
+# user's own wildcards (there is no separate "partial" switch).
+_IPV4_FRAGMENT_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})(?:\.(\d{1,3}))?\.?$")
+_MAC_SEP_FRAGMENT_RE = re.compile(r"^[0-9a-f]{1,2}(?:[:-][0-9a-f]{0,2}){1,5}$", re.I)
+_MAC_CISCO_FRAGMENT_RE = re.compile(r"^[0-9a-f]{4}(?:\.[0-9a-f]{0,4}){1,2}$", re.I)
+# bare hex from 6 digits up: shorter ones are too likely a hostname fragment
+_MAC_BARE_FRAGMENT_RE = re.compile(r"^[0-9a-f]{6,11}$", re.I)
+
+
+def interpret_query(q):
+    """Return (query, note) for a search string; note is None if unchanged.
+
+    - 2-3 IPv4 octets ("10.0.0") -> CIDR ("10.0.0.0/24")
+    - a MAC fragment in any notation -> "*<colon form>*". Only prefix-aligned
+      fragments can be re-paired; a colon fragment from the middle
+      ("45:58:f9") already works as typed.
+    - anything else (full MACs/IPs, hostnames, vendors) as is
+
+    Wildcards always go out as "*": Netdisco's sql_match only turns "*" into
+    "%", and only a query it changed counts as a wildcard search. A typed "%"
+    passes through unchanged, so a MAC search with it stays an exact match
+    (hostnames happen to work because the DNS lookup appends ".%" itself).
+    """
+    if "*" in q or "%" in q:
+        return q.replace("%", "*"), None
+    m = _IPV4_FRAGMENT_RE.match(q)
+    if m:
+        octets = [int(o) for o in m.groups() if o is not None]
+        if all(o <= 255 for o in octets):
+            cidr = ".".join(str(o) for o in octets + [0] * (4 - len(octets))) + f"/{8 * len(octets)}"
+            return cidr, cidr
+    hexdigits = re.sub(r"[:.\-]", "", q).lower()
+    if len(hexdigits) < 12:
+        mac = None
+        if _MAC_SEP_FRAGMENT_RE.match(q):
+            mac = q.lower().replace("-", ":").strip(":")
+        elif _MAC_CISCO_FRAGMENT_RE.match(q) or _MAC_BARE_FRAGMENT_RE.match(q):
+            mac = ":".join(hexdigits[i:i + 2] for i in range(0, len(hexdigits), 2))
+        if mac:
+            return f"*{mac}*", f"*{mac}* (MAC fragment)"
+    return q, None
+
 
 def _week_ago():
     return date.today() - timedelta(days=7)
@@ -45,35 +90,39 @@ class NodeSearchForm(DateRangeMixin):
         max_length=255,
         widget=forms.TextInput(attrs={
             "class": "form-control form-control-lg",
-            "placeholder": "MAC · IP · hostname · vendor · device",
+            "placeholder": "MAC · IP · hostname · vendor · device — * or % as wildcard",
             "autofocus": True,
             "autocomplete": "off",
             "spellcheck": "false",
         }),
-    )
-    partial = forms.BooleanField(
-        required=False,
-        label="Partial match",
-        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
 
     def clean_q(self):
         q = self.cleaned_data["q"].strip()
         if not q:
             raise forms.ValidationError("Enter a MAC address, IP address, hostname, vendor, or device name.")
-        # Skip MAC validation for IP addresses or when partial match is on
-        if IP_RE.match(q) or self.data.get("partial"):
+        # Skip MAC validation for IP addresses and wildcard searches
+        if IP_RE.match(q) or "*" in q or "%" in q:
             return q
-        # Catch obvious MAC typos (wrong length / invalid chars)
-        # Only fires when input has separators but no letters (looks like attempted MAC)
+        # Shorter MAC fragments are fine (interpret_query turns them into a
+        # wildcard search); only catch a MAC with too many digits.
         if (":" in q or "-" in q or "." in q) and not re.search(r'[a-zA-Z]{2,}', q):
             normalized = re.sub(r'[:\-\.]', '', q)
-            if len(normalized) != 12 or not re.fullmatch(r'[0-9A-Fa-f]+', normalized):
+            if re.fullmatch(r'[0-9A-Fa-f]+', normalized) and len(normalized) > 12:
                 raise forms.ValidationError(
                     f'"{q}" does not look like a valid MAC address. '
                     "Expected format: aa:bb:cc:dd:ee:ff"
                 )
         return q
+
+    def clean(self):
+        cleaned = super().clean()
+        q = cleaned.get("q")
+        if q:
+            query, note = interpret_query(q)
+            cleaned["q"] = query
+            cleaned["q_note"] = note
+        return cleaned
 
 
 class MacHistoryForm(DateRangeMixin):

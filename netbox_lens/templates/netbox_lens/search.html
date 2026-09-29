@@ -34,13 +34,6 @@
                 <button type="button" class="btn btn-outline-secondary" data-preset="clear">{% trans "Clear" %}</button>
               </div>
             </div>
-            <div class="vr"></div>
-            <div class="form-check">
-              {{ form.partial }}
-              <label class="form-check-label" for="{{ form.partial.id_for_label }}">
-                {{ form.partial.label }}
-              </label>
-            </div>
             <span id="lens-spinner"
                   class="htmx-indicator spinner-border spinner-border-sm text-primary ms-auto"
                   role="status" aria-hidden="true"></span>

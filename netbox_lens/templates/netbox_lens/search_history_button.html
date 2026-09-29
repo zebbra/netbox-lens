@@ -1,0 +1,8 @@
+{% load i18n %}
+<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 ms-auto fw-normal"
+        hx-get="{% url 'plugins:netbox_lens:search_history' %}?{% for mac in backend.history_macs %}mac={{ mac|urlencode }}&{% endfor %}backend={{ backend.backend|urlencode }}"
+        hx-target="#lens-sightings-{{ backend.backend }}" hx-swap="outerHTML"
+        hx-indicator="#lens-spinner"
+        title="{% trans 'Load the archived port history of these MACs' %}">
+  <i class="mdi mdi-history" aria-hidden="true"></i> {% trans "Load history" %}
+</button>

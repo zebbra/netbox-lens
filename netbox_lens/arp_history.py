@@ -1,20 +1,7 @@
-import re
-
 from .mac_history import _apply_date_filter
+from .templatetags.lens_filters import lens_vendor
 
 MAX_ROWS = 500
-
-# Netdisco's OUI table describes locally-administered/randomized MAC ranges
-# with entries like "randomized address [0-f][26ae]:xx:xx:xx" instead of a
-# real vendor name — that regex-looking range spec means nothing to a user,
-# so it's collapsed to a plain "Randomized" label.
-_RANDOMIZED_VENDOR_RE = re.compile(r"^randomized address\b", re.IGNORECASE)
-
-
-def _clean_vendor(vendor):
-    if vendor and _RANDOMIZED_VENDOR_RE.match(vendor):
-        return "Randomized"
-    return vendor
 
 
 def build_arp_history(
@@ -61,7 +48,7 @@ def build_arp_history(
             "mac": e.get("mac"),
             "client_ip": e.get("ip"),
             "client_name": e.get("dns"),
-            "vendor": _clean_vendor(e.get("vendor")),
+            "vendor": lens_vendor(e.get("vendor")),
             "active": e.get("active"),
             "time_first": e.get("time_first"),
             "time_last": e.get("time_last"),

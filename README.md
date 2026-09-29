@@ -41,7 +41,7 @@ PLUGINS_CONFIG = {
         "backends": {
             "netdisco": {
                 "url": "https://netdisco.example.com",
-                # token via env var LENS_NETDISCO_TOKEN (recommended)
+                # token via env var LENS_NETDISCO_VIEWER_TOKEN (recommended)
                 # or inline: "token": "your-token-here"
             }
         }
@@ -52,7 +52,10 @@ PLUGINS_CONFIG = {
 Set the Netdisco API token as an environment variable:
 
 ```bash
-export LENS_NETDISCO_TOKEN=your-long-lived-token
+export LENS_NETDISCO_VIEWER_TOKEN=your-long-lived-token
+# only for Discover/Macsuck/Arpnip and the Netdisco Jobs tab; its Netdisco
+# user needs admin = true (role api_admin)
+export LENS_NETDISCO_ADMIN_TOKEN=your-admin-token
 ```
 
 ## Backends

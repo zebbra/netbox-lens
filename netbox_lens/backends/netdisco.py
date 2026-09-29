@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 import requests
@@ -18,6 +19,48 @@ SNMP_TIMEOUT_DIVISOR = 12
 SNMP_TIMEOUT_FLOOR_US = 10_000_000
 SNMP_TIMEOUT_CAP_US = 20_000_000
 _TIMEOUT_UNITS_US = {"us": 1, "ms": 1_000, "s": 1_000_000, "m": 60_000_000, "h": 3_600_000_000}
+
+
+# The search fetches each matched MAC's full sighting history with one extra
+# call per MAC. A broad wildcard can match hundreds, so past this many only
+# the sightings from the search itself are shown.
+MAX_SIGHTING_FOLLOWUPS = 20
+
+
+def _search_timeout_hint(query, since, until, timeout):
+    """What to change when a search timed out, from what made it expensive."""
+    hints = []
+    if query.startswith("*") and query.strip("*"):
+        core = query.strip("*")
+        hints.append(f'anchor the wildcard, e.g. "{core}*" rather than "{query}"')
+    elif "*" in query:
+        hints.append("use fewer wildcards")
+    if since:
+        try:
+            days = (date.fromisoformat(until or date.today().isoformat()) - date.fromisoformat(since)).days + 1
+            hints.append(f"narrow the date range (now {days} days)")
+        except ValueError:
+            hints.append("narrow the date range")
+    if not hints:
+        return f"Netdisco did not answer within {timeout}s — it may be busy, try again in a moment."
+    return f"Netdisco did not answer within {timeout}s — " + " or ".join(hints) + "."
+
+
+def _apply_ssid(sightings, wireless_rows):
+    """Copy SSID/signal from /search/node's "wireless" rows onto sightings of
+    the same MAC (no FK between the tables). ssid "unknown" is skipped:
+    Netdisco writes that literal when its macsuck SNMP walk misses the SSID
+    table mid-roam, and as (mac, ssid) is node_wireless's key it lingers as
+    a spurious second row."""
+    by_mac = {}
+    for w in wireless_rows or []:
+        if w.get("mac") and w.get("ssid") and w.get("ssid") != "unknown":
+            by_mac.setdefault(w["mac"].lower(), w)
+    for s in sightings:
+        w = by_mac.get((s.get("mac") or "").lower())
+        if w:
+            s["ssid"] = w.get("ssid")
+            s["sigstrength"] = w.get("sigstrength")
 
 
 def parse_snmp_timeout_us(value: str | None) -> int | None:
@@ -45,6 +88,21 @@ class NetdiscoBackend(LensBackend):
     label = "Netdisco"
     icon = "mdi mdi-network"
 
+
+    def _viewer_token(self) -> str:
+        # Read-only token for lookups. LENS_NETDISCO_TOKEN is the pre-1.0.29
+        # name, still read so existing deployments keep working.
+        return (
+            os.environ.get("LENS_NETDISCO_VIEWER_TOKEN")
+            or os.environ.get("LENS_NETDISCO_TOKEN")
+            or self.config.get("token", "")
+        )
+
+    def _admin_token(self) -> str:
+        # Job queue (discover/macsuck/arpnip, Netdisco Jobs tab): the token's
+        # Netdisco user needs users.admin = true (role api_admin).
+        return os.environ.get("LENS_NETDISCO_ADMIN_TOKEN") or self.config.get("admin_token", "")
+
     def search(
         self, query: str, partial: bool = False, archived: bool = False,
         since: str | None = None, until: str | None = None,
@@ -70,7 +128,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params=params,
@@ -88,51 +146,26 @@ class NetdiscoBackend(LensBackend):
             # for the same dataset depending on which internal path matched.
             result.ips = (data.get("ips") or []) + (data.get("macs") or [])
 
-            # Always fetch the full port sighting history per MAC without a
-            # daterange — the initial search may have been date-filtered but
-            # sightings are most useful as a complete timeline.
-            seen_macs = (
-                {m["mac"] for m in result.macs     if m.get("mac")}
+            # Port sightings come back with the search itself only when it
+            # matched on a MAC (then with that MAC's node_wireless rows too).
+            # A hostname/IP match returns just the IP rows, so the sightings
+            # of those MACs need one follow-up call each: capped, because a
+            # broad wildcard can match hundreds. The archived history is only
+            # loaded on request (sighting_history, "Load history" button).
+            seen_macs = sorted(
+                {m["mac"] for m in result.ips if m.get("mac")}
                 | {s["mac"] for s in result.sightings if s.get("mac")}
             )
-            if seen_macs:
-                result.sightings = []
-                headers = {
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
-                    "Accept": "application/json",
-                }
-                for mac in seen_macs:
-                    follow_params = {"q": mac, "archived": "true" if archived else "false", "deviceports": "false"}
-                    if since:
-                        follow_params["daterange"] = f"{since} - {until or date.today().isoformat()}"
-                    r2 = requests.get(
-                        f"{base_url}/api/v1/search/node",
-                        headers=headers,
-                        params=follow_params,
-                        timeout=self.config.get("timeout", 15),
-                        verify=self.config.get("verify_ssl", True),
-                    )
-                    if r2.ok:
-                        d2 = r2.json() if r2.content else {}
-                        sightings = d2.get("sightings") or []
-                        # /search/node returns "wireless" (node_wireless rows)
-                        # alongside "sightings" for the same query, at no extra
-                        # request cost. No FK between the tables — correlate by
-                        # MAC (there's only one MAC per follow-up call here).
-                        # Skip ssid=="unknown": Netdisco writes that literal
-                        # string when its macsuck worker's SNMP walk misses the
-                        # SSID table for a client mid-association/roam, and
-                        # since (mac, ssid) is node_wireless's primary key, it
-                        # becomes a spurious permanent second row otherwise.
-                        wireless = next(
-                            (w for w in (d2.get("wireless") or []) if w.get("ssid") and w.get("ssid") != "unknown"),
-                            None,
-                        )
-                        if wireless:
-                            for s in sightings:
-                                s["ssid"] = wireless.get("ssid")
-                                s["sigstrength"] = wireless.get("sigstrength")
-                        result.sightings.extend(sightings)
+            result.history_macs = seen_macs[:MAX_SIGHTING_FOLLOWUPS]
+            if len(seen_macs) > MAX_SIGHTING_FOLLOWUPS:
+                result.notice = (
+                    f"{len(seen_macs)} MACs matched — port sightings and history are only loaded for up to "
+                    f"{MAX_SIGHTING_FOLLOWUPS}. Narrow the search to see them all."
+                )
+            if result.sightings:
+                _apply_ssid(result.sightings, data.get("wireless"))
+            elif seen_macs:
+                result.sightings = self._sightings_for_macs(result.history_macs, archived, since, until)
 
             # Device name/hostname matching is a separate Netdisco entity from
             # node/MAC sightings — query it too so switch/router hostnames
@@ -146,7 +179,7 @@ class NetdiscoBackend(LensBackend):
                 dresp = requests.get(
                     f"{base_url}/api/v1/search/device",
                     headers={
-                        "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                        "Authorization": f"Bearer {self._viewer_token()}",
                         "Accept": "application/json",
                     },
                     params={"name": query},
@@ -162,7 +195,7 @@ class NetdiscoBackend(LensBackend):
         except requests.ConnectionError:
             result.error = "Could not reach Netdisco — check the configured URL."
         except requests.Timeout:
-            result.error = "Netdisco did not respond in time."
+            result.error = _search_timeout_hint(query, since, until, self.config.get("timeout", 15))
         except requests.HTTPError as e:
             status = e.response.status_code
             if status == 401:
@@ -187,7 +220,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/nodes",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params=params,
@@ -200,6 +233,45 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
+    def _mac_sightings(self, mac, archived, since=None, until=None):
+        """All sightings of one exact MAC, with its SSID where known."""
+        params = {"q": mac, "archived": "true" if archived else "false", "deviceports": "false"}
+        if since:
+            params["daterange"] = f"{since} - {until or date.today().isoformat()}"
+        resp = requests.get(
+            f"{self.config.get('url', '').rstrip('/')}/api/v1/search/node",
+            headers={"Authorization": f"Bearer {self._viewer_token()}", "Accept": "application/json"},
+            params=params,
+            timeout=self.config.get("timeout", 15),
+            verify=self.config.get("verify_ssl", True),
+        )
+        if not resp.ok:
+            return []
+        data = resp.json() if resp.content else {}
+        sightings = data.get("sightings") or []
+        _apply_ssid(sightings, data.get("wireless"))
+        return sightings
+
+    def _sightings_for_macs(self, macs, archived, since=None, until=None):
+        sightings = []
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for rows in executor.map(lambda m: self._mac_sightings(m, archived, since, until), macs):
+                sightings.extend(rows)
+        sightings.sort(key=lambda s: s.get("time_last") or "", reverse=True)
+        return sightings
+
+    def sighting_history(self, macs):
+        """Archived-included sightings for up to MAX_SIGHTING_FOLLOWUPS MACs.
+        Returns (sightings, error)."""
+        if not self.config.get("url"):
+            return [], "Netdisco URL is not configured."
+        try:
+            return self._sightings_for_macs(list(macs)[:MAX_SIGHTING_FOLLOWUPS], archived=True), None
+        except requests.Timeout:
+            return [], f"Netdisco did not answer within {self.config.get('timeout', 15)}s loading the history."
+        except requests.RequestException as e:
+            return [], str(e)
+
     def search_ports(self, query: str, partial: bool = True) -> list:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
@@ -208,7 +280,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/search/port",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params={"q": query, "partial": "true" if partial else "false", "descr": "true"},
@@ -235,7 +307,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params=params,
@@ -286,7 +358,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params={"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"},
@@ -317,7 +389,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params=params,
@@ -356,7 +428,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/search/node",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 params={"q": mac, "partial": "false", "deviceports": "false", "show_vendor": "false", "archived": "true"},
@@ -382,7 +454,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/ports",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 timeout=self.config.get("timeout", 15),
@@ -414,7 +486,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/ports",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 timeout=self.config.get("timeout", 15),
@@ -458,7 +530,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/wireless_ports",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 timeout=self.config.get("timeout", 15),
@@ -483,7 +555,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 timeout=self.config.get("timeout", 15),
@@ -503,7 +575,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}/port/{port}/properties",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 timeout=self.config.get("timeout", 15),
@@ -534,7 +606,7 @@ class NetdiscoBackend(LensBackend):
             resp = requests.get(
                 f"{base_url}/api/v1/object/device/{device_ip}",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('LENS_NETDISCO_TOKEN', self.config.get('token', ''))}",
+                    "Authorization": f"Bearer {self._viewer_token()}",
                     "Accept": "application/json",
                 },
                 timeout=self.config.get("timeout", 15),
@@ -567,7 +639,7 @@ class NetdiscoBackend(LensBackend):
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return False, "Netdisco URL is not configured."
-        admin_token = os.environ.get("LENS_NETDISCO_ADMIN_TOKEN", self.config.get("admin_token", ""))
+        admin_token = self._admin_token()
         if not admin_token:
             return False, "No Netdisco admin token configured for triggering jobs."
         job = {"action": action, "device": device_ip}
@@ -586,8 +658,18 @@ class NetdiscoBackend(LensBackend):
                 verify=self.config.get("verify_ssl", True),
                 allow_redirects=False,
             )
-            if resp.status_code in (301, 302, 303):
-                return False, "Netdisco rejected the admin token (insufficient role for job triggering)."
+            if resp.status_code in (301, 302, 303, 307, 308):
+                # A valid token without the api_admin role (users.admin) is sent
+                # to /login/denied; any other target is a proxy/URL redirect.
+                location = resp.headers.get("Location", "")
+                if "/login/denied" in location:
+                    return False, (
+                        "Netdisco denied the job: the admin token's user lacks the admin flag "
+                        "(api_admin role) in Netdisco."
+                    )
+                if "/login" in location:
+                    return False, "Netdisco sent the job request to its login page — it wasn't treated as an API call."
+                return False, f"Netdisco redirected the job request to {location or 'an unknown location'} — check the configured URL."
             resp.raise_for_status()
             data = resp.json() if resp.content else {}
             if isinstance(data, dict) and data.get("success"):
@@ -616,7 +698,7 @@ class NetdiscoBackend(LensBackend):
         Returns None if the call couldn't be answered, [] if there are none.
         """
         base_url = self.config.get("url", "").rstrip("/")
-        admin_token = os.environ.get("LENS_NETDISCO_ADMIN_TOKEN", self.config.get("admin_token", ""))
+        admin_token = self._admin_token()
         if not base_url or not admin_token:
             return None
         try:
@@ -690,9 +772,9 @@ class NetdiscoBackend(LensBackend):
             s.error = "Netdisco URL is not configured."
             return s
         url = f"{base_url}/api/v1/statistics"
-        token = os.environ.get("LENS_NETDISCO_TOKEN", self.config.get("token", ""))
+        token = self._viewer_token()
         if not token:
-            s.error = f"LENS_NETDISCO_TOKEN is not set — no token to authenticate against {url}."
+            s.error = f"LENS_NETDISCO_VIEWER_TOKEN is not set — no token to authenticate against {url}."
             return s
         try:
             resp = requests.get(
@@ -710,7 +792,7 @@ class NetdiscoBackend(LensBackend):
         except requests.HTTPError as e:
             status = e.response.status_code
             if status in (401, 403):
-                s.error = f"HTTP {status} from {url} — LENS_NETDISCO_TOKEN was rejected (missing, expired, or IP-restricted)."
+                s.error = f"HTTP {status} from {url} — LENS_NETDISCO_VIEWER_TOKEN was rejected (missing, expired, or IP-restricted)."
             else:
                 s.error = f"HTTP {status} from {url}."
         except Exception as e:

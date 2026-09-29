@@ -6,6 +6,7 @@ app_name = "netbox_lens"
 
 urlpatterns = [
     path("search/", views.LensSearchView.as_view(), name="search"),
+    path("search/history/", views.LensSearchHistoryView.as_view(), name="search_history"),
     path("mac-history/", views.LensMacHistoryView.as_view(), name="mac_history"),
     path("arp-history/", views.LensArpHistoryView.as_view(), name="arp_history"),
     path("interfaces/", views.LensInterfaceSearchView.as_view(), name="interface_search"),

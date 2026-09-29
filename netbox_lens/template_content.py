@@ -267,6 +267,8 @@ def device_panel_context(device, user):
         "lens_device_pk": device.pk,
         "lens_bossy_last_updated": device.cf.get("bossy_last_updated"),
         "lens_netdisco_last_update": device.cf.get("netdisco_last_update"),
+        # set by discobox after each applied /rebuild (never on dry run or a plain sync)
+        "lens_inventory_last_rebuild": device.cf.get("inventory_last_rebuild"),
         "lens_snmp_modulator_last_updated": device.cf.get("snmp_modulator_last_updated"),
     }
 

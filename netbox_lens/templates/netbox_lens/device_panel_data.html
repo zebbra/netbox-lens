@@ -146,7 +146,10 @@
             <td></td>
           </tr>
           <tr>
-            <th scope="row" class="text-nowrap">{% trans "Netdisco" %}</th>
+            <th scope="row" class="text-nowrap">{% trans "Netdisco Sync" %}
+              <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+                 title="{% trans 'Sync (discobox, Netdisco → NetBox): adds and updates everything, deletes only what is safe to delete. APs only when something about them changed. Date = last sync that changed this device.' %}"></i>
+            </th>
             <td><span title="{{ lens_netdisco_last_update|lens_absolute }}">{{ lens_netdisco_last_update|lens_relative|default:"—" }}</span></td>
             <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
@@ -172,8 +175,11 @@
             </td>
           </tr>
           <tr>
-            <th scope="row" class="text-nowrap">{% trans "Inventory" %}</th>
-            <td class="text-muted">—</td>
+            <th scope="row" class="text-nowrap">{% trans "Inventory Rebuild" %}
+              <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+                 title="{% trans 'Rebuild: the sync, plus cleaning up whatever no longer exists in Netdisco. Always includes the APs. Time = last applied rebuild.' %}"></i>
+            </th>
+            <td><span title="{{ lens_inventory_last_rebuild|lens_absolute }}">{{ lens_inventory_last_rebuild|lens_relative|default:"—" }}</span></td>
             <td class="text-end text-nowrap">
               {% if lens_can_trigger %}
               <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-bs-toggle="modal"
@@ -182,7 +188,7 @@
                       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
                       hx-vals='{"dry_run": "true"}'
                       hx-target="#lens-rebuild-body" hx-swap="innerHTML" hx-trigger="click once"
-                      title="{% trans 'Preview — dry run, nothing applied' %}">
+                      title="{% trans 'Preview deletions — runs a normal sync, deletes nothing' %}">
                 <i class="mdi mdi-cog-refresh" aria-hidden="true"></i> {% trans "Rebuild Inventory" %}
               </button>
               <form method="post" action="{% url 'plugins:netbox_lens:rebuild_now' pk=lens_device_pk %}" class="d-inline">

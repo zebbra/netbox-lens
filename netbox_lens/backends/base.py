@@ -13,6 +13,9 @@ class SearchResult:
     macs: list = field(default_factory=list)
     devices: list = field(default_factory=list)
     error: str | None = None
+    notice: str | None = None
+    # MACs whose archived history "Load history" can fetch (capped)
+    history_macs: list = field(default_factory=list)
 
     @property
     def has_results(self):
@@ -95,6 +98,9 @@ class LensBackend(ABC):
 
     def device_web_url(self, device_ip: str) -> str | None:
         return None
+
+    def sighting_history(self, macs) -> tuple[list, str | None]:
+        return [], None
 
     def trigger_discover(self, device_ip: str, auth_profile: str | None = None,
                          snmp_timeout: str | None = None) -> tuple[bool, str]:
