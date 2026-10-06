@@ -53,6 +53,7 @@
         <td>
           {% if row.port_device_url %}
           {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot goes underneath #}
+          <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'Access point' %}"></i>
           <a href="{{ row.port_device_url }}">{{ row.port_description }}</a>
           <br /><span class="text-muted small">{% if row.nb_interface_url %}<a href="{{ row.nb_interface_url }}" class="text-muted">{{ row.port }}</a>{% else %}{{ row.port }}{% endif %}</span>
           {% else %}

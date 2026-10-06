@@ -202,7 +202,11 @@ def ap_radio_links(ports):
 
 def apply_ap_radio_links(rows):
     """For rows whose port didn't match a NetBox interface on the WLC itself,
-    fill nb_interface_url / port_description / port_device_url from the AP."""
+    fill nb_interface_url / port_description / port_device_url from the AP.
+
+    A row on an AP radio or with an SSID is wireless even when the
+    wireless_ports call failed (e.g. a slow 9800 timing out), so is_wireless
+    is filled in where still unknown; wireless_ports, when it answers, wins."""
     pending = [r for r in rows if r.get("port") and not r.get("nb_interface_url")]
     links = ap_radio_links({r["port"] for r in pending})
     for r in pending:
@@ -211,6 +215,9 @@ def apply_ap_radio_links(rows):
             r["nb_interface_url"] = link["url"]
             r["port_description"] = link["ap_name"]
             r["port_device_url"] = link["ap_url"]
+    for r in rows:
+        if r.get("is_wireless") is None and (r.get("port_device_url") or r.get("ssid")):
+            r["is_wireless"] = True
 
 
 def _device_ip(device):
