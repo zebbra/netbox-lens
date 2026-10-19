@@ -137,7 +137,7 @@
               </span>
               {% else %}—{% endif %}
             </td>
-            <td>{{ row.time_last_stamp|default:"—" }}</td>
+            <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last_stamp|default:"—" }}</span></td>
             <td>
               {% if row.active %}<span class="badge text-bg-green">{% trans "yes" %}</span>
               {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}

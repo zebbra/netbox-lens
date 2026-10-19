@@ -46,6 +46,14 @@ def _search_timeout_hint(query, since, until, timeout):
     return f"Netdisco did not answer within {timeout}s — " + " or ".join(hints) + "."
 
 
+# Per-sighting port topology from /search/node?port_context=true.
+PORT_CONTEXT_FIELDS = (
+    "port_is_uplink", "port_remote_ip", "port_is_master", "port_slave_of",
+    "port_remote_is_wap", "port_remote_is_phone", "lag_remote_ip",
+    "neighbor_is_device", "port_mac_count",
+)
+
+
 def _apply_ssid(sightings, wireless_rows):
     """Copy SSID/signal from /search/node's "wireless" rows onto sightings of
     the same MAC (no FK between the tables). ssid "unknown" is skipped:
@@ -120,6 +128,8 @@ class NetdiscoBackend(LensBackend):
             "deviceports": "true",
             "show_vendor": "true",
             "archived": "true" if archived else "false",
+            # transit vs edge per sighting (Netdisco >= 2.113 custom); ignored by older ones
+            "port_context": "true",
         }
         if since:
             params["daterange"] = f"{since} - {until or date.today().isoformat()}"
@@ -235,7 +245,7 @@ class NetdiscoBackend(LensBackend):
 
     def _mac_sightings(self, mac, archived, since=None, until=None):
         """All sightings of one exact MAC, with its SSID where known."""
-        params = {"q": mac, "archived": "true" if archived else "false", "deviceports": "false"}
+        params = {"q": mac, "archived": "true" if archived else "false", "deviceports": "false", "port_context": "true"}
         if since:
             params["daterange"] = f"{since} - {until or date.today().isoformat()}"
         resp = requests.get(
@@ -300,7 +310,7 @@ class NetdiscoBackend(LensBackend):
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return []
-        params = {"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"}
+        params = {"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true", "port_context": "true"}
         if since:
             params["daterange"] = f"{since} - {until or date.today().isoformat()}"
         try:
@@ -344,6 +354,7 @@ class NetdiscoBackend(LensBackend):
                     "_device_name": (s.get("device") or {}).get("name"),
                     "ssid": (wireless_by_mac.get(s.get("mac")) or {}).get("ssid"),
                     "sigstrength": (wireless_by_mac.get(s.get("mac")) or {}).get("sigstrength"),
+                    **{k: v for k, v in s.items() if k in PORT_CONTEXT_FIELDS},
                 }
                 for s in (data.get("sightings") or [])
             ]
@@ -506,6 +517,9 @@ class NetdiscoBackend(LensBackend):
                     "up_admin": p.get("up_admin"),
                     "vlan": p.get("vlan"),
                     "type": p.get("type"),
+                    # topology, for telling transit ports from edge ports
+                    "remote_ip": p.get("remote_ip"),
+                    "slave_of": p.get("slave_of"),
                 }
                 for p in data
             ]

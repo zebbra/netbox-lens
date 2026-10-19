@@ -12,6 +12,8 @@
   {% trans "That interface pattern matched more ports than could be searched — add a device filter to narrow it down." %}
 </div>
 {% endif %}
+<div data-lens-transit-scope>
+{% include 'netbox_lens/transit_toggle.html' with toggle_id="mac" toggle_class="" %}
 <div class="table-responsive">
   <table class="table table-hover table-headings mb-0">
     <thead>
@@ -29,18 +31,32 @@
         <th>{% trans "VLAN" %}</th>
         <th>{% trans "Client IP" %}</th>
         <th>{% trans "Client Name" %}</th>
-        <th>{% trans "Active Now" %}</th>
+        <th>
+          {% trans "Active" %}
+          <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+             title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
+        </th>
+        <th>
+          {% trans "Port Up" %}
+          <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+             title="{% trans 'Whether the port is currently up (VictoriaMetrics), not whether this MAC is still on it.' %}"></i>
+        </th>
         {% if not hide_device_area %}
         <th>{% trans "Area" %}</th>
         {% endif %}
         <th>{% trans "First Seen" %}</th>
         <th>{% trans "Last Seen" %}</th>
+        <th style="min-width:110px">
+          <i class="mdi mdi-chart-timeline-variant text-muted" aria-hidden="true"
+             title="{% trans 'First to last seen, on a shared axis from the oldest entry in this list (left) to now (right).' %}"></i>
+        </th>
         <th></th>
       </tr>
     </thead>
     <tbody>
+{% lens_age_axis rows as age_axis %}
       {% for row in rows %}
-      <tr>
+      <tr class="lens-row{% if row.transit_via %} lens-transit{% endif %}">
         {% if not hide_device_area %}
         <td>
           {% if row.nb_device_url %}
@@ -66,9 +82,18 @@
           <br /><span class="text-muted small">{{ row.port_description }}</span>
           {% endif %}
           {% endif %}
+          {% if row.port_mac_count %}
+          <br /><span class="text-muted small" title="{% trans 'Active MACs on this port (Netdisco)' %}">{{ row.port_mac_count }} MAC{{ row.port_mac_count|pluralize }}</span>
+          {% endif %}
+          {% if row.transit_via %}
+          <br /><span class="text-muted small" title="{% trans 'Port toward another network device: the MAC only passes through here.' %}"><i class="mdi mdi-transit-connection-variant" aria-hidden="true"></i> {% trans "transit via" %} {{ row.transit_via }}</span>
+          {% endif %}
         </td>
         <td>
-          {% if row.is_wireless is None %}—
+          {% if row.node_ap_url %}
+            <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'This MAC is an access point (wired uplink)' %}"></i>
+            {% trans "AP" %} · <a href="{{ row.node_ap_url }}">{{ row.node_ap_name }}</a>
+          {% elif row.is_wireless is None %}—
           {% elif row.is_wireless %}
             <i class="mdi mdi-wifi" aria-hidden="true"
                title="{% if row.sigstrength %}{% trans 'Signal' %}: {{ row.sigstrength }}{% endif %}"></i>
@@ -87,15 +112,25 @@
           {% else %}—{% endif %}
         </td>
         <td>
+          {% if row.active is None %}—
+          {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
+          {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
+        </td>
+        <td>
           {% if row.active_now is None %}—
-          {% elif row.active_now %}{% trans "yes" %}
-          {% else %}{% trans "no" %}{% endif %}
+          {% elif row.active_now %}<i class="mdi mdi-arrow-up-bold text-success" aria-hidden="true" title="{% trans 'Port up' %}"></i>
+          {% else %}<i class="mdi mdi-arrow-down-bold text-danger" aria-hidden="true" title="{% trans 'Port down' %}"></i>{% endif %}
         </td>
         {% if not hide_device_area %}
         <td>{{ row.area|default:"—" }}</td>
         {% endif %}
-        <td><span title="{{ row.time_first|lens_absolute }}">{{ row.time_first|lens_relative }}</span></td>
-        <td><span title="{{ row.time_last|lens_absolute }}">{{ row.time_last|lens_relative }}</span></td>
+        <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
+        <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
+        <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
+          <div style="position:relative;height:6px;border-radius:3px;background:var(--bs-tertiary-bg)">
+            <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--bs-primary);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
+          </div>
+        </td>
         <td class="text-nowrap">
           {% if row.mac %}
           <a href="{% url 'plugins:netbox_lens:arp_history' %}?mac={{ row.mac|urlencode }}" title="{% trans 'View in ARP History' %}">
@@ -111,10 +146,11 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if hide_device_area %}10{% else %}12{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr><td colspan="{% if hide_device_area %}12{% else %}14{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+</div>
 </div>
 
 <style>code.lens-copy { cursor: pointer; border-radius: 3px; }</style>

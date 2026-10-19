@@ -15,15 +15,24 @@
         <th>{% trans "MAC" %}</th>
         <th>{% trans "Client IP" %}</th>
         <th>{% trans "Client Name" %}</th>
-        <th>{% trans "Last Known" %}</th>
+        <th>
+          {% trans "Active" %}
+          <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+             title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
+        </th>
         <th>{% trans "Vendor" %}</th>
         <th>{% trans "Area" %}</th>
         <th>{% trans "First Seen" %}</th>
         <th>{% trans "Last Seen" %}</th>
+        <th style="min-width:110px">
+          <i class="mdi mdi-chart-timeline-variant text-muted" aria-hidden="true"
+             title="{% trans 'First to last seen, on a shared axis from the oldest entry in this list (left) to now (right).' %}"></i>
+        </th>
         <th></th>
       </tr>
     </thead>
     <tbody>
+{% lens_age_axis rows as age_axis %}
       {% for row in rows %}
       <tr>
         <td>
@@ -44,13 +53,18 @@
         </td>
         <td>
           {% if row.active is None %}—
-          {% elif row.active %}{% trans "yes" %}
-          {% else %}{% trans "no" %}{% endif %}
+          {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
+          {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
         </td>
         <td>{{ row.vendor|default:"—" }}</td>
         <td>{{ row.area|default:"—" }}</td>
-        <td><span title="{{ row.time_first|lens_absolute }}">{{ row.time_first|lens_relative }}</span></td>
-        <td><span title="{{ row.time_last|lens_absolute }}">{{ row.time_last|lens_relative }}</span></td>
+        <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
+        <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
+        <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
+          <div style="position:relative;height:6px;border-radius:3px;background:var(--bs-tertiary-bg)">
+            <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--bs-primary);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
+          </div>
+        </td>
         <td class="text-nowrap">
           {% if row.mac %}
           <a href="{% url 'plugins:netbox_lens:mac_history' %}?mac={{ row.mac|urlencode }}" title="{% trans 'View in MAC History' %}">
@@ -60,7 +74,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="10" class="text-muted">{% trans "No matching entries found." %}</td></tr>
+      <tr><td colspan="11" class="text-muted">{% trans "No matching entries found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

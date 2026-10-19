@@ -20,6 +20,9 @@
   <script>
   (function () {
     var sightings = {{ backend.sightings_json|safe }};
+    // where the MAC is connected, not every uplink it passes through
+    var edge = sightings.filter(function(s){ return !s.transit_via; });
+    if (edge.length) sightings = edge;
     var el = document.getElementById('lens-tl-{{ backend.name }}');
     if (!el || !sightings.length) return;
 
@@ -58,7 +61,13 @@
       if (!vlanColors[vk]) { vlanColors[vk] = PALETTE[vi++ % PALETTE.length]; vlanLabels[vk] = vlanLabel(s); }
     });
 
-    // time range
+    // time range: the search's From/To when picked (whole days, local time),
+    // otherwise first sighting -> now
+    function day(iso, plus) {
+      var p = iso.split('-');
+      return new Date(+p[0], p[1] - 1, +p[2] + (plus || 0)).getTime();
+    }
+    var rangeFrom = '{{ range_from|default:"" }}', rangeTo = '{{ range_to|default:"" }}';
     var tMin = Infinity, tMax = -Infinity;
     sightings.forEach(function(s) {
       var t0 = new Date(s.time_first).getTime(), t1 = new Date(s.time_last).getTime();
@@ -66,7 +75,9 @@
       if (t1 > tMax) tMax = t1;
     });
     var now = Date.now();
-    if (now > tMax) tMax = now;
+    if (rangeFrom) tMin = day(rangeFrom);
+    if (rangeTo) tMax = day(rangeTo, 1);
+    else if (now > tMax) tMax = now;
     var span = tMax - tMin || 1;
 
     var W    = Math.max(el.clientWidth || 600, 400);
@@ -121,8 +132,12 @@
 
       segments.forEach(function(s) {
         var k  = keyFn(s);
-        var x0 = px(new Date(s.time_first).getTime());
-        var x1 = px(new Date(s.time_last).getTime());
+        // clip to the range; the tooltip keeps the real times
+        var t0 = Math.max(new Date(s.time_first).getTime(), tMin);
+        var t1 = Math.min(new Date(s.time_last).getTime(), tMax);
+        if (t1 < t0) return;
+        var x0 = px(t0);
+        var x1 = px(t1);
         var bw = Math.max(x1 - x0, 3);
         var g  = el_('g', {}, svg);
 
@@ -173,7 +188,7 @@
   </script>
 
   {# Port sightings #}
-  <div class="card mb-3">
+  <div class="card mb-3" data-lens-transit-scope>
     <div class="card-header">
       <h6 class="mb-0 d-flex align-items-center gap-2">
         <i class="mdi mdi-ethernet-cable" aria-hidden="true"></i>
@@ -184,6 +199,7 @@
         {% elif backend.history_macs %}{% include 'netbox_lens/search_history_button.html' %}{% endif %}
       </h6>
     </div>
+    {% include 'netbox_lens/transit_toggle.html' with toggle_id=backend.name toggle_class="mx-3 mt-2" %}
     <div class="table-responsive">
       <table class="table table-hover table-headings mb-0">
         <thead>
@@ -195,17 +211,27 @@
             <th>{% trans "VLAN" %}</th>
             <th>{% trans "First Seen" %}</th>
             <th>{% trans "Last Seen" %}</th>
+            <th style="min-width:110px">
+              <i class="mdi mdi-chart-timeline-variant text-muted" aria-hidden="true"
+                 title="{% trans 'First to last seen, on a shared axis from the oldest entry in this list (left) to now (right).' %}"></i>
+            </th>
             <th>
-              {% trans "Active Now" %}
+              {% trans "Active" %}
               <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
-                 title="{% trans 'Whether the port is currently up (VictoriaMetrics) — not whether this sighting is recent.' %}"></i>
+                 title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
+            </th>
+            <th>
+              {% trans "Port Up" %}
+              <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+                 title="{% trans 'Whether the port is currently up (VictoriaMetrics), not whether this MAC is still on it.' %}"></i>
             </th>
           </tr>
         </thead>
         <tbody>
+{% lens_age_axis backend.sightings as age_axis %}
           {% for row in backend.sightings %}
           {% with dname=row.device.name|default:row.switch %}
-          <tr>
+          <tr class="lens-row{% if row.transit_via %} lens-transit{% endif %}">
             <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
             <td>
               <span class="d-inline-flex align-items-center gap-1">
@@ -233,9 +259,18 @@
               <br /><span class="text-muted small">{{ row.port_description }}</span>
               {% endif %}
               {% endif %}
+              {% if row.port_mac_count %}
+              <br /><span class="text-muted small" title="{% trans 'Active MACs on this port (Netdisco)' %}">{{ row.port_mac_count }} MAC{{ row.port_mac_count|pluralize }}</span>
+              {% endif %}
+              {% if row.transit_via %}
+              <br /><span class="text-muted small" title="{% trans 'Port toward another network device: the MAC only passes through here.' %}"><i class="mdi mdi-transit-connection-variant" aria-hidden="true"></i> {% trans "transit via" %} {{ row.transit_via }}</span>
+              {% endif %}
             </td>
             <td>
-              {% if row.is_wireless is None %}—
+              {% if row.node_ap_url %}
+                <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'This MAC is an access point (wired uplink)' %}"></i>
+                {% trans "AP" %} · <a href="{{ row.node_ap_url }}">{{ row.node_ap_name }}</a>
+              {% elif row.is_wireless is None %}—
               {% elif row.is_wireless %}
                 <i class="mdi mdi-wifi" aria-hidden="true"
                    title="{% if row.sigstrength %}{% trans 'Signal' %}: {{ row.sigstrength }}{% endif %}"></i>
@@ -244,12 +279,22 @@
               {% endif %}
             </td>
             <td>{{ row.vlan|default:"—" }}</td>
-            <td>{{ row.time_first_stamp|default:"—" }}</td>
-            <td>{{ row.time_last_stamp|default:"—" }}</td>
+            <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first_stamp|default:"—" }}</span></td>
+            <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last_stamp|default:"—" }}</span></td>
+            <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
+              <div style="position:relative;height:6px;border-radius:3px;background:var(--bs-tertiary-bg)">
+                <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--bs-primary);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
+              </div>
+            </td>
+            <td>
+              {% if row.active is None %}—
+              {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
+              {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
+            </td>
             <td>
               {% if row.active_now is None %}—
-              {% elif row.active_now %}<span class="badge text-bg-green">{% trans "yes" %}</span>
-              {% else %}<span class="badge text-bg-secondary">{% trans "no" %}</span>{% endif %}
+              {% elif row.active_now %}<i class="mdi mdi-arrow-up-bold text-success" aria-hidden="true" title="{% trans 'Port up' %}"></i>
+              {% else %}<i class="mdi mdi-arrow-down-bold text-danger" aria-hidden="true" title="{% trans 'Port down' %}"></i>{% endif %}
             </td>
           </tr>
           {% endwith %}

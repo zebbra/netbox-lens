@@ -67,6 +67,63 @@ def lens_absolute(value):
     return dt.strftime("%Y-%m-%d %H:%M:%S %Z" if has_time else "%Y-%m-%d")
 
 
+@register.filter
+def lens_datetime(value):
+    """Date and minute for table cells, in local time; date only for date values."""
+    dt, has_time = _parse(value)
+    if not dt:
+        return value or ""
+    return dt.strftime("%Y-%m-%d %H:%M" if has_time else "%Y-%m-%d")
+
+
+@register.filter
+def lens_ago(value):
+    """Always-relative age for the hover ("3 weeks, 2 days ago"), no cut-off."""
+    dt, has_time = _parse(value)
+    if not dt:
+        return ""
+    now = timezone.localtime()
+    if not has_time:
+        days = (now.date() - dt.date()).days
+        if days == 0:
+            return _("today")
+        if days == 1:
+            return _("yesterday")
+    if dt > now:
+        return ""
+    return _("%(time)s ago") % {"time": timesince(dt, now, depth=2)}
+
+
+@register.simple_tag
+def lens_age_axis(rows):
+    """Shared time axis for lens_age_bar: oldest time_first in the list -> now."""
+    starts = [dt for dt, _ in (_parse(_get(r, "time_first") or _get(r, "time_last")) for r in rows or []) if dt]
+    if not starts:
+        return None
+    return min(starts).timestamp(), timezone.now().timestamp()
+
+
+@register.filter
+def lens_age_bar(row, axis):
+    """Inline CSS placing a row's first -> last seen span on the shared axis."""
+    if not axis:
+        return ""
+    first, _ = _parse(_get(row, "time_first"))
+    last, _ = _parse(_get(row, "time_last"))
+    first, last = first or last, last or first
+    if not first:
+        return ""
+    t0, t1 = axis
+    span = (t1 - t0) or 1
+    left = min(max((first.timestamp() - t0) / span, 0), 1) * 100
+    right = min(max((last.timestamp() - t0) / span, 0), 1) * 100
+    return f"left:{left:.1f}%;width:{max(right - left, 0):.1f}%"
+
+
+def _get(row, key):
+    return row.get(key) if isinstance(row, dict) else getattr(row, key, None)
+
+
 # Netdisco's OUI table describes locally-administered/randomized MAC ranges
 # with entries like "randomized address [0-f][26ae]:xx:xx:xx" instead of a
 # real vendor name — that regex-looking range spec means nothing to a user,

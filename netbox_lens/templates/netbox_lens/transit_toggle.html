@@ -1,0 +1,28 @@
+{% load i18n %}
+{# "Show transit ports" switch for the MAC tables: hides tr.lens-transit rows inside the enclosing [data-lens-transit-scope], unless every row is transit (then the edge isn't known and hiding would leave nothing). #}
+<div class="form-check form-switch small mb-2 d-none {{ toggle_class }}">
+  <input class="form-check-input" type="checkbox" id="lens-transit-{{ toggle_id }}">
+  <label class="form-check-label text-muted" for="lens-transit-{{ toggle_id }}">
+    {% trans "Show transit ports" %} (<span></span>)
+    <i class="mdi mdi-information-outline" aria-hidden="true"
+       title="{% trans 'Ports toward another network device (uplinks, port-channels): the MAC only passes through there.' %}"></i>
+  </label>
+</div>
+<script>
+(function () {
+  var box = document.currentScript.previousElementSibling;
+  var scope = box.closest('[data-lens-transit-scope]');
+  var transit = scope.querySelectorAll('tr.lens-transit');
+  var all = scope.querySelectorAll('tbody tr.lens-row');
+  if (!transit.length) return;
+  var input = box.querySelector('input');
+  box.querySelector('span').textContent = transit.length;
+  box.classList.remove('d-none');
+  function apply() {
+    transit.forEach(function (tr) { tr.classList.toggle('d-none', !input.checked); });
+  }
+  input.checked = transit.length === all.length;
+  input.addEventListener('change', apply);
+  apply();
+})();
+</script>

@@ -25,7 +25,7 @@ from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
-from .template_content import apply_ap_radio_links, device_panel_context, device_panel_enabled, interface_nodes_context
+from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context
 from .victoria_metrics import fetch_interface_updown_state
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
@@ -401,11 +401,17 @@ class LensSearchView(PermissionRequiredMixin, View):
 
                 _enrich_results(results)
                 _enrich_sightings(results, backends, config.get("victoria_metrics", {}))
+                for b, r in zip(backends, results):
+                    if r:
+                        apply_transit_ports(r.sightings or [], [b], "switch")
                 context["results"] = results
                 context["query"] = query
                 context["query_note"] = form.cleaned_data.get("q_note")
                 context["wildcard_active_only"] = wildcard and not archived
                 context["archived"] = archived
+                # The port timeline spans the picked range, not first sighting -> now.
+                context["range_from"] = since
+                context["range_to"] = until
                 context["history_from"] = (date.today() - timedelta(days=30)).isoformat()
                 context["history_to"] = date.today().isoformat()
 
@@ -430,6 +436,7 @@ class LensSearchHistoryView(PermissionRequiredMixin, View):
         result = SearchResult(backend=backend.name, label=backend.label, icon=backend.icon,
                               sightings=sightings, history_macs=macs)
         _enrich_sightings([result], [backend], config.get("victoria_metrics", {}))
+        apply_transit_ports(result.sightings or [], [backend], "switch")
         return render(request, "netbox_lens/search_sightings.html", {
             "backend": result, "history": True, "history_error": error,
         })
@@ -738,6 +745,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                 _enrich_mac_history(rows)
                 _apply_active_now(rows, config.get("victoria_metrics", {}))
                 _apply_wireless(rows, backends)
+                apply_transit_ports(rows, backends, "device_ip")
                 if request.GET.get("export") == "csv":
                     return _csv_response(
                         "mac_history.csv",
@@ -745,12 +753,14 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                             ("Device", lambda r: r.get("device_name") or r.get("device_ip")),
                             ("Port", lambda r: r.get("port")),
                             ("Port Description", lambda r: r.get("port_description")),
+                            ("Transit Via", lambda r: r.get("transit_via")),
                             ("MAC", lambda r: r.get("mac")),
                             ("VLAN", lambda r: r.get("vlan")),
                             ("Client IP", lambda r: r.get("client_ip")),
                             ("Client Name", lambda r: r.get("client_name")),
-                            ("Active Now", lambda r: r.get("active_now")),
-                            ("Connection", lambda r: {True: "WLAN", False: "Wired"}.get(r.get("is_wireless"))),
+                            ("Active", lambda r: r.get("active")),
+                            ("Port Up", lambda r: r.get("active_now")),
+                            ("Connection", lambda r: "AP" if r.get("node_ap_url") else {True: "WLAN", False: "Wired"}.get(r.get("is_wireless"))),
                             ("SSID", lambda r: r.get("ssid")),
                             ("Area", lambda r: r.get("area")),
                             ("First Seen", lambda r: r.get("time_first")),
@@ -802,7 +812,7 @@ class LensArpHistoryView(PermissionRequiredMixin, View):
                             ("MAC", lambda r: r.get("mac")),
                             ("Client IP", lambda r: r.get("client_ip")),
                             ("Client Name", lambda r: r.get("client_name")),
-                            ("Last Known", lambda r: r.get("active")),
+                            ("Active", lambda r: r.get("active")),
                             ("Vendor", lambda r: r.get("vendor")),
                             ("Area", lambda r: r.get("area")),
                             ("First Seen", lambda r: r.get("time_first")),
@@ -1080,6 +1090,7 @@ class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             backends = get_backends(config)
             rows, total, truncated, _ = build_mac_history(backends, device_ip=ip, max_rows=MAX_MACARP_ROWS)
+            apply_transit_ports(rows, backends, "device_ip")
             iface_map = {}
             if NbInterface:
                 iface_map = {

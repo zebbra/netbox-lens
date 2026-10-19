@@ -216,6 +216,7 @@ def build_mac_history(
             "client_name": client.get("dns"),
             "ssid": n.get("ssid"),
             "sigstrength": n.get("sigstrength"),
+            "active": n.get("active"),
             "time_first": n.get("time_first"),
             "time_last": n.get("time_last"),
         })

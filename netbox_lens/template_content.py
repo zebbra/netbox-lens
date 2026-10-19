@@ -17,6 +17,11 @@ except ImportError:
     NbInterface = None
 
 try:
+    from ipam.models import IPAddress as NbIPAddress
+except ImportError:
+    NbIPAddress = None
+
+try:
     from dcim.models import MACAddress as NbMACAddress  # NetBox >= 4.2
 except ImportError:
     NbMACAddress = None
@@ -218,6 +223,100 @@ def apply_ap_radio_links(rows):
     for r in rows:
         if r.get("is_wireless") is None and (r.get("port_device_url") or r.get("ssid")):
             r["is_wireless"] = True
+    _apply_ap_nodes(rows)
+
+
+def _apply_ap_nodes(rows):
+    """Mark rows whose MAC is an AP itself (its wired uplink, e.g. the
+    GigabitEthernet0 MAC discobox syncs), so the AP reads as an AP, not as
+    just another wired client."""
+    if not NbMACAddress or not NbDevice:
+        return
+    roles = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("ap_roles") or ()
+    macs = {m for m in (_normalize_mac(r.get("mac")) for r in rows) if m}
+    if not roles or not macs:
+        return
+    devices_by_mac = {}
+    for mac, device_id in NbMACAddress.objects.filter(
+        mac_address__in=macs, interface__device__role__slug__in=roles,
+    ).values_list("mac_address", "interface__device_id"):
+        devices_by_mac.setdefault(str(mac).lower(), set()).add(device_id)
+    ap_by_mac = {mac: ids.pop() for mac, ids in devices_by_mac.items() if len(ids) == 1}
+    devices = NbDevice.objects.in_bulk(set(ap_by_mac.values()))
+    for r in rows:
+        ap = devices.get(ap_by_mac.get(_normalize_mac(r.get("mac"))))
+        if ap:
+            r["node_ap_name"] = ap.name
+            r["node_ap_url"] = ap.get_absolute_url()
+
+
+def apply_transit_ports(rows, backends, ip_key):
+    """Set transit_via on rows seen on a port toward another network device
+    (an uplink, or a port-channel whose members lead to one): the MAC only
+    passes through there, it isn't connected there. One Netdisco ports call
+    per distinct device; the neighbor counts as a network device by its
+    NetBox role (transit_roles). Unknown neighbors leave the row as edge."""
+    if not NbIPAddress:
+        return
+    # Netdisco's port_context already says it per sighting: no ports calls.
+    _apply_port_context(rows)
+    rows = [r for r in rows if "neighbor_is_device" not in r]
+    if not backends:
+        return
+    ips = sorted({r[ip_key] for r in rows if r.get(ip_key) and r.get("port")})
+    if not ips:
+        return
+    with ThreadPoolExecutor() as executor:
+        ports_by_ip = dict(zip(ips, executor.map(backends[0].device_ports, ips)))
+    # (device ip, port) -> neighbor IPs; a port-channel inherits its members'
+    neighbors = {}
+    for ip, ports in ports_by_ip.items():
+        for p in ports or []:
+            if not p.get("remote_ip"):
+                continue
+            for port in (p.get("port"), p.get("slave_of")):
+                if port:
+                    neighbors.setdefault((ip, port), set()).add(p["remote_ip"])
+    remote_ips = set().union(*neighbors.values()) if neighbors else set()
+    roles = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("transit_roles") or ()
+    if not remote_ips or not roles:
+        return
+    q = reduce(operator.or_, (Q(address__net_host=ip) for ip in remote_ips))
+    infra = {
+        str(address.ip): name
+        for address, name in NbIPAddress.objects.filter(
+            q, interface__device__role__slug__in=roles,
+        ).values_list("address", "interface__device__name")
+    }
+    for r in rows:
+        via = sorted(infra[i] for i in neighbors.get((r.get(ip_key), r.get("port")), ()) if i in infra)
+        if via:
+            r["transit_via"] = via[0]
+
+
+def _apply_port_context(rows):
+    """Transit from Netdisco's port_context fields: the port (or its LAG's
+    member) has a neighbor Netdisco discovered as a device, and it isn't
+    a phone or AP. The neighbor is named from NetBox when its IP is there."""
+    remote = {}
+    for r in rows:
+        if "neighbor_is_device" not in r:
+            continue
+        ip = r.get("port_remote_ip") or r.get("lag_remote_ip")
+        if ip and r.get("neighbor_is_device") and not (r.get("port_remote_is_wap") or r.get("port_remote_is_phone")):
+            remote[id(r)] = ip
+    if not remote:
+        return
+    q = reduce(operator.or_, (Q(address__net_host=ip) for ip in set(remote.values())))
+    names = {
+        str(address.ip): name
+        for address, name in NbIPAddress.objects.filter(q, interface__isnull=False)
+        .values_list("address", "interface__device__name")
+    }
+    for r in rows:
+        ip = remote.get(id(r))
+        if ip:
+            r["transit_via"] = names.get(ip, ip)
 
 
 def _device_ip(device):
