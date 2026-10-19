@@ -27,10 +27,10 @@ except ImportError:
     NbMACAddress = None
 
 
-def _device_nodes(backends, device_ip, port=None, since=None, until=None):
+def _device_nodes(backends, device_ip, port=None, since=None, until=None, port_context=False):
     nodes = []
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(b.device_nodes, device_ip, since, until) for b in backends]
+        futures = [executor.submit(b.device_nodes, device_ip, since, until, port_context) for b in backends]
         for future in as_completed(futures):
             result = future.result()
             if port:

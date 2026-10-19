@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
+from .backends.netdisco import PORT_CONTEXT_FIELDS
 from .template_content import _device_nodes
 
 try:
@@ -63,7 +64,7 @@ def _fetch_nodes_for_targets(backends, targets, since=None, until=None, require_
     nodes = []
     with ThreadPoolExecutor() as executor:
         futures = {
-            executor.submit(_device_nodes, backends, ip, port, since, until): (ip, name)
+            executor.submit(_device_nodes, backends, ip, port, since, until, True): (ip, name)
             for ip, name, port in targets
         }
         for future in as_completed(futures):
@@ -217,6 +218,7 @@ def build_mac_history(
             "ssid": n.get("ssid"),
             "sigstrength": n.get("sigstrength"),
             "active": n.get("active"),
+            **{k: n[k] for k in PORT_CONTEXT_FIELDS if k in n},
             "time_first": n.get("time_first"),
             "time_last": n.get("time_last"),
         })

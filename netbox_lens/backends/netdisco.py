@@ -219,11 +219,16 @@ class NetdiscoBackend(LensBackend):
 
         return result
 
-    def device_nodes(self, device_ip: str, since: str | None = None, until: str | None = None) -> list:
+    def device_nodes(
+        self, device_ip: str, since: str | None = None, until: str | None = None, port_context: bool = False,
+    ) -> list:
         base_url = self.config.get("url", "").rstrip("/")
         if not base_url:
             return []
         params = {"active_only": "false" if since else "true"}
+        if port_context:
+            # transit vs edge per node (Netdisco >= 2.113 custom); ignored by older ones
+            params["port_context"] = "true"
         if since:
             params["daterange"] = f"{since} - {until or date.today().isoformat()}"
         try:

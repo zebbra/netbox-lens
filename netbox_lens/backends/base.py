@@ -54,7 +54,9 @@ class LensBackend(ABC):
     ) -> SearchResult:
         ...
 
-    def device_nodes(self, device_ip: str, since: str | None = None, until: str | None = None) -> list:
+    def device_nodes(
+        self, device_ip: str, since: str | None = None, until: str | None = None, port_context: bool = False,
+    ) -> list:
         return []
 
     def device_summary(self, device_ip: str) -> dict:
