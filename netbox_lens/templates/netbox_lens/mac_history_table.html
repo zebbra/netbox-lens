@@ -22,20 +22,24 @@
         <th>{% trans "Device" %}</th>
         {% endif %}
         <th>{% trans "Port" %}</th>
+        {% if not device_tab %}
         <th>
           {% trans "Connection" %}
           <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
              title="{% trans 'WLAN clients often randomize their MAC address per session/reconnect — the same physical device may show up under different MACs over time.' %}"></i>
         </th>
+        {% endif %}
         <th>{% trans "MAC" %}</th>
         <th>{% trans "VLAN" %}</th>
         <th>{% trans "Client IP" %}</th>
         <th>{% trans "Client Name" %}</th>
+        {% if not device_tab %}
         <th>
           {% trans "Active" %}
           <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
              title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
         </th>
+        {% endif %}
         {% if not hide_device_area %}
         <th>{% trans "Area" %}</th>
         {% endif %}
@@ -89,6 +93,8 @@
           {% endif %}
         </td>
         {% endif %}
+        {# device tab: Connection is always "—" there (no wireless lookup for the device's own rows), Active is shown by the bar's opacity #}
+        {% if not device_tab %}
         <td>
           {% if row.node_ap_url %}
             <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'This MAC is an access point (wired uplink)' %}"></i>
@@ -101,6 +107,7 @@
           {% else %}<i class="mdi mdi-ethernet" aria-hidden="true" title="{% trans 'Wired' %}"></i> {% trans "Wired" %}
           {% endif %}
         </td>
+        {% endif %}
         <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac|default:"—" }}</code></td>
         <td>{{ row.vlan|default:"—" }}</td>
         <td>
@@ -111,17 +118,19 @@
           {% if row.client_name %}<code class="lens-copy" data-value="{{ row.client_name }}">{{ row.client_name }}</code>
           {% else %}—{% endif %}
         </td>
+        {% if not device_tab %}
         <td>
           {% if row.active is None %}—
           {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
           {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
         </td>
+        {% endif %}
         {% if not hide_device_area %}
         <td>{{ row.area|default:"—" }}</td>
         {% endif %}
         <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
         <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
-        <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
+        <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}{% with dur=row|lens_duration %}{% if dur %} · {{ dur }}{% endif %}{% endwith %}">
           <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
             <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
           </div>
@@ -141,7 +150,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if hide_device_area %}11{% else %}13{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr><td colspan="{% if device_tab %}9{% elif hide_device_area %}11{% else %}13{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

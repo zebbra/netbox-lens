@@ -20,6 +20,13 @@
   <script>
   (function () {
     var sightings = {{ backend.sightings_json|safe }};
+    // Netdisco stamps carry no zone and are UTC; show them in local time
+    function ts(v) {
+      if (!v) return NaN;
+      v = String(v).replace(' ', 'T');
+      return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : v + 'Z').getTime();
+    }
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
     // where the MAC is connected, not every uplink it passes through
     var edge = sightings.filter(function(s){ return !s.transit_via; });
     if (edge.length) sightings = edge;
@@ -48,7 +55,7 @@
     function vlanLabel(s) { return s.vlan && s.vlan !== '0' ? 'v' + s.vlan : '—'; }
 
     var sorted = sightings.slice().sort(function(a,b){
-      return new Date(a.time_first) - new Date(b.time_first);
+      return ts(a.time_first) - ts(b.time_first);
     });
 
     // stable color per unique key (assigned in time order)
@@ -70,7 +77,7 @@
     var rangeFrom = '{{ range_from|default:"" }}', rangeTo = '{{ range_to|default:"" }}';
     var tMin = Infinity, tMax = -Infinity;
     sightings.forEach(function(s) {
-      var t0 = new Date(s.time_first).getTime(), t1 = new Date(s.time_last).getTime();
+      var t0 = ts(s.time_first), t1 = ts(s.time_last);
       if (t0 < tMin) tMin = t0;
       if (t1 > tMax) tMax = t1;
     });
@@ -85,8 +92,8 @@
     var H    = 3 * ROW_H + 2 * GAP + AXIS_H;
 
     function px(t)      { return LABEL_W + (t - tMin) / span * barW; }
-    function fmtDate(t) { return new Date(t).toISOString().slice(0, 10); }
-    function fmtDT(t)   { return new Date(t).toISOString().slice(0, 16).replace('T', ' '); }
+    function fmtDate(t) { var d = new Date(t); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+    function fmtDT(t)   { var d = new Date(t); return fmtDate(t) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
 
     var tickCount = Math.min(6, Math.max(2, Math.floor(barW / 100)));
     var ticks = [];
@@ -133,8 +140,8 @@
       segments.forEach(function(s) {
         var k  = keyFn(s);
         // clip to the range; the tooltip keeps the real times
-        var t0 = Math.max(new Date(s.time_first).getTime(), tMin);
-        var t1 = Math.min(new Date(s.time_last).getTime(), tMax);
+        var t0 = Math.max(ts(s.time_first), tMin);
+        var t1 = Math.min(ts(s.time_last), tMax);
         if (t1 < t0) return;
         var x0 = px(t0);
         var x1 = px(t1);
@@ -157,8 +164,8 @@
 
         var tip = document.createElementNS(ns, 'title');
         tip.textContent = labelMap[k] + '\n'
-          + fmtDT(new Date(s.time_first).getTime()) + ' → '
-          + fmtDT(new Date(s.time_last).getTime())
+          + fmtDT(ts(s.time_first)) + ' → '
+          + fmtDT(ts(s.time_last))
           + (s.active ? '\n● active' : '\n○ inactive');
         bar.appendChild(tip);
       });
@@ -274,9 +281,9 @@
               {% endif %}
             </td>
             <td>{{ row.vlan|default:"—" }}</td>
-            <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first_stamp|default:"—" }}</span></td>
-            <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last_stamp|default:"—" }}</span></td>
-            <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
+            <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
+            <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
+            <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}{% with dur=row|lens_duration %}{% if dur %} · {{ dur }}{% endif %}{% endwith %}">
               <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
                 <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
               </div>

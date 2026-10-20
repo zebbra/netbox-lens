@@ -1,7 +1,10 @@
 import re
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 
+from zoneinfo import ZoneInfo
+
 from django import template
+from django.conf import settings
 from django.utils import timezone
 from django.utils.timesince import timesince
 from django.utils.translation import gettext as _
@@ -33,8 +36,17 @@ def _parse(value):
     except (TypeError, ValueError, OSError, OverflowError):
         return None, False
     if timezone.is_naive(dt):
-        dt = timezone.make_aware(dt)
+        # Naive text timestamps come from Netdisco, which stores UTC
+        # (naive_timezone overrides); date/datetime objects are local.
+        if isinstance(value, str) and has_time:
+            dt = dt.replace(tzinfo=ZoneInfo(_naive_timezone()))
+        else:
+            dt = timezone.make_aware(dt)
     return timezone.localtime(dt), has_time
+
+
+def _naive_timezone():
+    return settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("naive_timezone") or "UTC"
 
 
 @register.filter
@@ -118,6 +130,16 @@ def lens_age_bar(row, axis):
     left = min(max((first.timestamp() - t0) / span, 0), 1) * 100
     right = min(max((last.timestamp() - t0) / span, 0), 1) * 100
     return f"left:{left:.1f}%;width:{max(right - left, 0):.1f}%"
+
+
+@register.filter
+def lens_duration(row):
+    """First -> last seen as a span ("3 weeks, 2 days") for the age bar hover."""
+    first, _ = _parse(_get(row, "time_first"))
+    last, _ = _parse(_get(row, "time_last"))
+    if not first or not last or last < first:
+        return ""
+    return timesince(first, last, depth=2)
 
 
 def _get(row, key):

@@ -5,7 +5,7 @@ class LensConfig(PluginConfig):
     name = "netbox_lens"
     verbose_name = "LENS"
     description = "Locate Endpoints across Network Systems"
-    version = "1.0.33"
+    version = "1.0.34"
     author = "Stefan Grosser"
     author_email = "stefan.grosser@zebbra.ch"
     base_url = "lens"
@@ -25,6 +25,8 @@ class LensConfig(PluginConfig):
         # a port-channel, a member's neighbor) has one of these is "transit" --
         # MACs only pass through it, so MAC views hide those rows by default.
         "transit_roles": ["router", "firewall", "lwapp-ctr", "switch"],
+        # Time zone of timestamps that arrive without one (Netdisco's are UTC).
+        "naive_timezone": "UTC",
     }
 
 
