@@ -61,8 +61,8 @@
         <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
         <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
         <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
-          <div style="position:relative;height:6px;border-radius:3px;background:var(--bs-tertiary-bg)">
-            <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--bs-primary);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
+          <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
+            <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
           </div>
         </td>
         <td class="text-nowrap">

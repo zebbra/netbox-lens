@@ -1,10 +1,12 @@
 import csv
 import logging
 import operator
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from functools import reduce
+from itertools import groupby
 
 from django.apps import apps
 from django.conf import settings
@@ -26,7 +28,6 @@ from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sy
 from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
 from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context
-from .victoria_metrics import fetch_interface_updown_state
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
@@ -152,7 +153,6 @@ def _enrich_sightings(results, backends, vm_config):
                 s["is_wireless"] = port in ports
     apply_ap_radio_links(sightings)
 
-    _apply_active_now(sightings, vm_config)
 
 
 def _csv_cell(value):
@@ -206,36 +206,6 @@ def _enrich_mac_history(rows):
                 r["nb_interface_url"] = url
                 r["port_description"] = description or None
     apply_ap_radio_links(rows)
-
-
-def _apply_active_now(rows, vm_config):
-    """Overlay an "active now" (oper=up) flag onto any list of dicts with
-    device_id/port keys (MAC History rows, search sightings, ...) via a
-    single bulk VictoriaMetrics query — same source and no-fan-out approach
-    as Down-Ports' oper status (see interface_search.apply_vm_oper_status).
-
-    Leaves active_now=None (rendered as "—") when VM has no data for that
-    device+port, rather than guessing "down" — a miss can mean the port is
-    admin-down, or the device isn't covered by the SNMP module yet.
-    """
-    if not vm_config or not vm_config.get("url"):
-        return
-    device_ids = {str(r["device_id"]) for r in rows if r.get("device_id")}
-    if not device_ids:
-        return
-    try:
-        status, _ = fetch_interface_updown_state(
-            vm_config["url"],
-            device_ids,
-            timeout=vm_config.get("timeout", 10),
-            verify_tls=vm_config.get("verify_ssl", True),
-        )
-    except Exception:
-        return
-    for r in rows:
-        data = status.get((str(r.get("device_id")), r.get("port")))
-        if data:
-            r["active_now"] = data["oper"] == "up"
 
 
 def _apply_wireless(rows, backends):
@@ -743,7 +713,6 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                     date_to=form.cleaned_data.get("date_to"),
                 )
                 _enrich_mac_history(rows)
-                _apply_active_now(rows, config.get("victoria_metrics", {}))
                 _apply_wireless(rows, backends)
                 apply_transit_ports(rows, backends, "device_ip")
                 if request.GET.get("export") == "csv":
@@ -759,7 +728,6 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                             ("Client IP", lambda r: r.get("client_ip")),
                             ("Client Name", lambda r: r.get("client_name")),
                             ("Active", lambda r: r.get("active")),
-                            ("Port Up", lambda r: r.get("active_now")),
                             ("Connection", lambda r: "AP" if r.get("node_ap_url") else {True: "WLAN", False: "Wired"}.get(r.get("is_wireless"))),
                             ("SSID", lambda r: r.get("ssid")),
                             ("Area", lambda r: r.get("area")),
@@ -1077,6 +1045,24 @@ class LensInterfaceNodesDataView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/interface_nodes_data.html", interface_nodes_context(iface))
 
 
+def _port_sort_key(port):
+    """Natural order: Gi1/0/2 before Gi1/0/10."""
+    return [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", port or "")]
+
+
+def _group_by_port(rows):
+    """Sort rows by port (newest first within a port) and set port_rowspan on
+    each group's first row (0 on the rest), so the table shows a port once.
+    Transit rows of a port hide together, so the rowspan stays consistent."""
+    rows.sort(key=lambda r: r.get("time_last") or "", reverse=True)
+    rows.sort(key=lambda r: _port_sort_key(r.get("port")))
+    for _, group in groupby(rows, key=lambda r: r.get("port")):
+        group = list(group)
+        for r in group:
+            r["port_rowspan"] = 0
+        group[0]["port_rowspan"] = len(group)
+
+
 class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
     """htmx partial backing DeviceMacArpView's tab — the actual Netdisco
     fetch, deferred so it can't block the tab's own page load."""
@@ -1104,6 +1090,7 @@ class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
                     url, description = iface_map.get(r["port"], (None, None))
                     r["nb_interface_url"] = url
                     r["port_description"] = description or None
+            _group_by_port(rows)
             summary = {}
             if backends:
                 summary = backends[0].device_summary(ip) or {}

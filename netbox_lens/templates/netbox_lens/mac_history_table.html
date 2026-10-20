@@ -36,11 +36,6 @@
           <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
              title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
         </th>
-        <th>
-          {% trans "Port Up" %}
-          <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
-             title="{% trans 'Whether the port is currently up (VictoriaMetrics), not whether this MAC is still on it.' %}"></i>
-        </th>
         {% if not hide_device_area %}
         <th>{% trans "Area" %}</th>
         {% endif %}
@@ -56,7 +51,7 @@
     <tbody>
 {% lens_age_axis rows as age_axis %}
       {% for row in rows %}
-      <tr class="lens-row{% if row.transit_via %} lens-transit{% endif %}">
+      <tr class="lens-row{% if row.transit_via %} lens-transit{% endif %}"{% if group_by_port and row.port_rowspan %} style="border-top:2px solid var(--tblr-border-color, #dee2e6)"{% endif %}>
         {% if not hide_device_area %}
         <td>
           {% if row.nb_device_url %}
@@ -66,7 +61,9 @@
           {% endif %}
         </td>
         {% endif %}
-        <td>
+        {# group_by_port (device tab): rows come sorted by port, the port cell spans its group #}
+        {% if not group_by_port or row.port_rowspan %}
+        <td{% if group_by_port %} rowspan="{{ row.port_rowspan }}" class="align-top"{% endif %}>
           {% if row.port_device_url %}
           {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot goes underneath #}
           <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'Access point' %}"></i>
@@ -84,11 +81,14 @@
           {% endif %}
           {% if row.port_mac_count %}
           <br /><span class="text-muted small" title="{% trans 'Active MACs on this port (Netdisco)' %}">{{ row.port_mac_count }} MAC{{ row.port_mac_count|pluralize }}</span>
+          {% elif group_by_port %}
+          <br /><span class="text-muted small">{{ row.port_rowspan }} MAC{{ row.port_rowspan|pluralize }}</span>
           {% endif %}
           {% if row.transit_via %}
           <br /><span class="text-muted small" title="{% trans 'Port toward another network device: the MAC only passes through here.' %}"><i class="mdi mdi-transit-connection-variant" aria-hidden="true"></i> {% trans "transit via" %} {{ row.transit_via }}</span>
           {% endif %}
         </td>
+        {% endif %}
         <td>
           {% if row.node_ap_url %}
             <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'This MAC is an access point (wired uplink)' %}"></i>
@@ -116,19 +116,14 @@
           {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
           {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
         </td>
-        <td>
-          {% if row.active_now is None %}—
-          {% elif row.active_now %}<i class="mdi mdi-arrow-up-bold text-success" aria-hidden="true" title="{% trans 'Port up' %}"></i>
-          {% else %}<i class="mdi mdi-arrow-down-bold text-danger" aria-hidden="true" title="{% trans 'Port down' %}"></i>{% endif %}
-        </td>
         {% if not hide_device_area %}
         <td>{{ row.area|default:"—" }}</td>
         {% endif %}
         <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
         <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
         <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
-          <div style="position:relative;height:6px;border-radius:3px;background:var(--bs-tertiary-bg)">
-            <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--bs-primary);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
+          <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
+            <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
           </div>
         </td>
         <td class="text-nowrap">
@@ -146,7 +141,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if hide_device_area %}12{% else %}14{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr><td colspan="{% if hide_device_area %}11{% else %}13{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

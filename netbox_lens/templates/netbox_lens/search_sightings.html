@@ -220,11 +220,6 @@
               <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
                  title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
             </th>
-            <th>
-              {% trans "Port Up" %}
-              <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
-                 title="{% trans 'Whether the port is currently up (VictoriaMetrics), not whether this MAC is still on it.' %}"></i>
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -282,19 +277,14 @@
             <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first_stamp|default:"—" }}</span></td>
             <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last_stamp|default:"—" }}</span></td>
             <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}">
-              <div style="position:relative;height:6px;border-radius:3px;background:var(--bs-tertiary-bg)">
-                <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--bs-primary);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
+              <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
+                <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
               </div>
             </td>
             <td>
               {% if row.active is None %}—
               {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
               {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
-            </td>
-            <td>
-              {% if row.active_now is None %}—
-              {% elif row.active_now %}<i class="mdi mdi-arrow-up-bold text-success" aria-hidden="true" title="{% trans 'Port up' %}"></i>
-              {% else %}<i class="mdi mdi-arrow-down-bold text-danger" aria-hidden="true" title="{% trans 'Port down' %}"></i>{% endif %}
             </td>
           </tr>
           {% endwith %}
