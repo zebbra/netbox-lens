@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from django import template
 from django.conf import settings
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.timesince import timesince
 from django.utils.translation import gettext as _
 
@@ -158,3 +159,39 @@ def lens_vendor(vendor):
     if vendor and _RANDOMIZED_VENDOR_RE.match(str(vendor)):
         return "Random"
     return vendor
+
+
+# Data older than this gets an amber clock, older than STALE_ALERT a red one.
+STALE_WARN = timedelta(hours=12)
+STALE_ALERT = timedelta(hours=48)
+
+
+@register.filter
+def lens_stale_class(value):
+    """Text colour for a poll-age clock: muted when fresh, amber, then red."""
+    dt, _ = _parse(value)
+    if not dt:
+        return "text-danger"
+    age = timezone.localtime() - dt
+    if age > STALE_ALERT:
+        return "text-danger"
+    if age > STALE_WARN:
+        return "text-warning"
+    return "text-muted"
+
+
+@register.filter
+def lens_status_icon(value, kind="oper"):
+    """Arrow icon for an ifAdmin/ifOper status, the raw value as its hover.
+    A down admin status is grey (deliberately disabled), a down oper red."""
+    status = (value or "").strip()
+    if not status:
+        return "—"
+    low = status.lower()
+    if low == "up":
+        icon, cls = "mdi-arrow-up-bold", "text-success"
+    elif low in ("down", "lowerlayerdown"):
+        icon, cls = "mdi-arrow-down-bold", "text-secondary" if kind == "admin" else "text-danger"
+    else:
+        icon, cls = "mdi-help-circle-outline", "text-muted"
+    return format_html('<i class="mdi {} {}" title="{}" aria-label="{}"></i>', icon, cls, status, status)

@@ -1,3 +1,4 @@
+import copy
 import re
 from datetime import date, timedelta
 
@@ -296,7 +297,7 @@ class InterfaceSearchForm(forms.Form):
         label="If admin.",
         choices=ADMIN_CHOICES,
         required=False,
-        widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
+        widget=forms.Select(attrs={"class": "form-select form-select-sm no-ts", "style": "width: auto"}),
     )
     # Sourced from VictoriaMetrics (interfaceUpDownState), not NetBox itself —
     # NetBox only tracks admin/enabled state, not operational state.
@@ -304,13 +305,71 @@ class InterfaceSearchForm(forms.Form):
         label="If oper.",
         choices=ADMIN_CHOICES,
         required=False,
-        widget=forms.Select(attrs={"class": "form-select form-select-sm"}),
+        widget=forms.Select(attrs={"class": "form-select form-select-sm no-ts", "style": "width: auto"}),
     )
 
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("vlan") and not cleaned["vlan"].isdigit():
             raise forms.ValidationError("VLAN must be numeric.")
+        return cleaned
+
+
+OPER_CHOICES = [
+    ("down", "Down"),
+    ("up", "Up"),
+    ("any", "Any"),
+]
+
+ADMIN_ANY_CHOICES = [
+    ("any", "Any"),
+    ("up", "Up"),
+    ("down", "Down"),
+]
+
+
+class DownPortsForm(forms.Form):
+    """Filters for the Down Ports (free ports) page. Netdisco's portfree
+    report does admin/oper/min_days; the text filters run on its result."""
+    device = copy.deepcopy(InterfaceSearchForm.base_fields["device"])
+    interface = copy.deepcopy(InterfaceSearchForm.base_fields["interface"])
+    description = copy.deepcopy(InterfaceSearchForm.base_fields["description"])
+    vlan = copy.deepcopy(InterfaceSearchForm.base_fields["vlan"])
+    admin = forms.ChoiceField(
+        label="If admin.",
+        choices=ADMIN_ANY_CHOICES,
+        required=False,
+        initial="any",
+        widget=forms.Select(attrs={"class": "form-select form-select-sm no-ts", "style": "width: auto"}),
+    )
+    oper = forms.ChoiceField(
+        label="If oper.",
+        choices=OPER_CHOICES,
+        required=False,
+        initial="down",
+        widget=forms.Select(attrs={"class": "form-select form-select-sm no-ts", "style": "width: auto"}),
+    )
+    min_days = forms.IntegerField(
+        label="Min. days without MAC",
+        min_value=0,
+        max_value=3650,
+        required=False,
+        initial=30,
+        widget=forms.NumberInput(attrs={
+            "class": "form-control form-control-sm",
+            "style": "width: 6em",
+            "title": "Only ports with no MAC seen for at least this many days (or never).",
+        }),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("vlan") and not cleaned["vlan"].isdigit():
+            raise forms.ValidationError("VLAN must be numeric.")
+        if cleaned.get("min_days") is None:
+            cleaned["min_days"] = 30
+        cleaned["admin"] = cleaned.get("admin") or "any"
+        cleaned["oper"] = cleaned.get("oper") or "down"
         return cleaned
 
 

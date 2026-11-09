@@ -250,58 +250,17 @@ def _apply_ap_nodes(rows):
             r["node_ap_url"] = ap.get_absolute_url()
 
 
-def apply_transit_ports(rows, backends, ip_key):
+def apply_transit_ports(rows):
     """Set transit_via on rows seen on a port toward another network device
-    (an uplink, or a port-channel whose members lead to one): the MAC only
-    passes through there, it isn't connected there. One Netdisco ports call
-    per distinct device; the neighbor counts as a network device by its
-    NetBox role (transit_roles). Unknown neighbors leave the row as edge."""
+    (an uplink, or a port-channel whose member leads to one), from Netdisco's
+    port_context fields: the port (or its LAG's member) has a neighbor
+    Netdisco discovered as a device, and it isn't a phone or AP. The MAC only
+    passes through there. The neighbor is named from NetBox when its IP is
+    there; rows without port_context stay edge."""
     if not NbIPAddress:
         return
-    # Netdisco's port_context already says it per sighting: no ports calls.
-    _apply_port_context(rows)
-    rows = [r for r in rows if "neighbor_is_device" not in r]
-    if not backends:
-        return
-    ips = sorted({r[ip_key] for r in rows if r.get(ip_key) and r.get("port")})
-    if not ips:
-        return
-    with ThreadPoolExecutor() as executor:
-        ports_by_ip = dict(zip(ips, executor.map(backends[0].device_ports, ips)))
-    # (device ip, port) -> neighbor IPs; a port-channel inherits its members'
-    neighbors = {}
-    for ip, ports in ports_by_ip.items():
-        for p in ports or []:
-            if not p.get("remote_ip"):
-                continue
-            for port in (p.get("port"), p.get("slave_of")):
-                if port:
-                    neighbors.setdefault((ip, port), set()).add(p["remote_ip"])
-    remote_ips = set().union(*neighbors.values()) if neighbors else set()
-    roles = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("transit_roles") or ()
-    if not remote_ips or not roles:
-        return
-    q = reduce(operator.or_, (Q(address__net_host=ip) for ip in remote_ips))
-    infra = {
-        str(address.ip): name
-        for address, name in NbIPAddress.objects.filter(
-            q, interface__device__role__slug__in=roles,
-        ).values_list("address", "interface__device__name")
-    }
-    for r in rows:
-        via = sorted(infra[i] for i in neighbors.get((r.get(ip_key), r.get("port")), ()) if i in infra)
-        if via:
-            r["transit_via"] = via[0]
-
-
-def _apply_port_context(rows):
-    """Transit from Netdisco's port_context fields: the port (or its LAG's
-    member) has a neighbor Netdisco discovered as a device, and it isn't
-    a phone or AP. The neighbor is named from NetBox when its IP is there."""
     remote = {}
     for r in rows:
-        if "neighbor_is_device" not in r:
-            continue
         ip = r.get("port_remote_ip") or r.get("lag_remote_ip")
         if ip and r.get("neighbor_is_device") and not (r.get("port_remote_is_wap") or r.get("port_remote_is_phone")):
             remote[id(r)] = ip
@@ -407,9 +366,40 @@ def interface_nodes_context(iface):
     ip = _device_ip(iface.device)
     backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
     nodes = []
+    nac = None
     if backends:
-        nodes = [n for n in _device_nodes(backends, ip, port=iface.name) if n.get("active")]
-    return {"lens_nodes": nodes, "lens_device_ip": ip, "lens_port": iface.name}
+        # 802.1X/NAC state of the port, one call, alongside the node fetch
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pae_f = executor.submit(backends[0].port_pae, ip, iface.name)
+            nodes = [dict(n) for n in _device_nodes(backends, ip, port=iface.name) if n.get("active")]
+            pae = pae_f.result() or {}
+        if pae.get("authconfig_state") or pae.get("port_control"):
+            nac = pae
+        # client IP/name from ARP, where some router has resolved the MAC
+        macs = sorted({n["mac"] for n in nodes if n.get("mac")})[:MAX_RESOLVED_MACS]
+        with ThreadPoolExecutor() as executor:
+            clients = dict(zip(macs, executor.map(lambda mac: _resolve_mac(backends, mac), macs)))
+        for n in nodes:
+            client = clients.get(n.get("mac")) or {}
+            n["client_ip"] = client.get("ip")
+            n["client_name"] = client.get("dns")
+    return {
+        "lens_nodes": nodes, "lens_nac": nac, "lens_device_ip": ip, "lens_port": iface.name,
+        "lens_device_name": getattr(iface.device, "name", None),
+    }
+
+
+# An access port has a handful of MACs; cap the per-MAC ARP lookups for
+# the odd port with hundreds (an uplink).
+MAX_RESOLVED_MACS = 50
+
+
+def _resolve_mac(backends, mac):
+    for b in backends:
+        result = b.resolve_mac(mac)
+        if result:
+            return result
+    return None
 
 
 class InterfaceLensPanel(PluginTemplateExtension):

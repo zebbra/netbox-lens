@@ -1,0 +1,129 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+{% load lens_filters %}
+
+{% block title %}LENS – {% trans "Down Ports" %}{% endblock %}
+
+{% block content %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-information-outline" aria-hidden="true"></i>
+  {% blocktrans trimmed %}
+  Access ports free for reuse: no MAC seen on the port for at least the given number of days, or never.
+  Uplinks (CDP/LLDP neighbor), LAGs and virtual ports are left out. Data from Netdisco's MAC tables;
+  the clock shows how old a device's last MAC poll (macsuck) is. On devices without MAC data the
+  age comes from the link change instead (<i class="mdi mdi-link-variant" aria-hidden="true"></i>, less reliable).
+  With If oper. = Up it lists ports that are up but silent, e.g. a client failing NAC.
+  {% endblocktrans %}
+</div>
+<form method="get">
+  <div class="table-responsive">
+    <table class="table table-hover table-headings mb-0 lens-sortable">
+      <thead>
+        <tr>
+          <th data-sort-type="text">{% trans "Element name" %}</th>
+          <th data-sort-type="text">{% trans "Interface (ifDescr)" %}</th>
+          <th data-sort-type="text">{% trans "Description (ifAlias)" %}</th>
+          <th data-sort-type="num">{% trans "VLAN" %}</th>
+          <th data-sort-type="text">{% trans "Speed" %}</th>
+          <th data-sort-type="text">{% trans "Managed" %}</th>
+          <th data-sort-type="text">{% trans "If admin." %}</th>
+          <th data-sort-type="text">{% trans "If oper." %}</th>
+          <th data-sort-type="num">{% trans "Days unused" %}</th>
+          <th></th>
+        </tr>
+        <tr>
+          <th>{{ form.device }}</th>
+          <th>{{ form.interface }}</th>
+          <th>{{ form.description }}</th>
+          <th>{{ form.vlan }}</th>
+          <th></th>
+          <th></th>
+          <th>{{ form.admin }}</th>
+          <th>{{ form.oper }}</th>
+          <th><div class="d-flex align-items-center gap-1"><span class="small text-muted">≥</span>{{ form.min_days }}</div></th>
+          <th>
+            <div class="d-flex gap-1">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="mdi mdi-magnify" aria-hidden="true"></i> {% trans "Search" %}
+              </button>
+              {% if searched and not error %}
+              <a href="?{{ request.GET.urlencode }}&export=csv" class="btn btn-outline-secondary btn-sm"
+                 title="{% trans 'Export the rows shown below as CSV.' %}">
+                <i class="mdi mdi-file-delimited-outline" aria-hidden="true"></i>
+              </a>
+              {% endif %}
+            </div>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if searched and not error %}
+          {% for row in rows %}
+          <tr>
+            <td>{% if row.nb_device_url %}<a href="{{ row.nb_device_url }}">{{ row.device_name }}</a>{% else %}{{ row.device_name }}{% endif %}</td>
+            <td data-sort="{{ row.interface_name }}">{% if row.nb_interface_url %}<a href="{{ row.nb_interface_url }}">{{ row.interface_name }}</a>{% else %}{{ row.interface_name }}{% endif %}</td>
+            <td>{{ row.description|default:"—" }}</td>
+            <td data-sort="{{ row.vlan|default:'' }}">{{ row.vlan|default:"—" }}</td>
+            <td>{{ row.speed|default:"—" }}</td>
+            <td>{{ row.managed|default:"—" }}</td>
+            <td data-sort="{{ row.admin|default:'' }}">{{ row.admin|lens_status_icon:"admin" }}</td>
+            <td data-sort="{{ row.oper|default:'' }}">{{ row.oper|lens_status_icon:"oper" }}</td>
+            {# unknown age sorts lowest, "no MAC ever" highest #}
+            <td data-sort="{% if not row.age_basis %}-1{% elif row.age_days is None %}999999{% else %}{{ row.age_days }}{% endif %}" class="text-nowrap">
+              {% if row.age_basis == "mac" %}
+                {% if row.age_days is None %}
+                <span class="text-muted" title="{% trans 'No MAC ever seen on this port (or expired from Netdisco).' %}">{% trans "no MAC known" %}</span>
+                {% else %}
+                <span title="{{ row.last_mac_seen|lens_absolute }}{% if row.last_mac %} · {{ row.last_mac }}{% endif %}">{{ row.age_days }} d</span>
+                {% endif %}
+              {% elif row.age_basis == "lastchange" %}
+                <span title="{% blocktrans with ts=row.lastchange_stamp|lens_absolute %}No MAC data for this device. Link down since {{ ts }} (ifLastChange, may be inaccurate).{% endblocktrans %}">{{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
+              {% elif row.age_basis == "boot" %}
+                <span title="{% blocktrans with ts=row.device_boot|lens_absolute %}No MAC data for this device. Link unchanged since the reboot on {{ ts }}, so down at least that long.{% endblocktrans %}">≥ {{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
+              {% else %}
+                <span class="text-muted fst-italic" title="{% trans 'No MAC data for this device and no usable link change, so it is unknown whether this port is in use.' %}">{% trans "unknown" %}</span>
+              {% endif %}
+              {% if row.age_clock %}
+              <i class="mdi mdi-clock-outline {{ row.age_clock|lens_stale_class }}" aria-hidden="true"
+                 title="{% if row.age_basis == "mac" %}{% blocktrans with ago=row.age_clock|lens_ago %}MAC table polled {{ ago }}{% endblocktrans %}{% else %}{% blocktrans with ago=row.age_clock|lens_ago %}Last discovered {{ ago }}{% endblocktrans %}{% endif %}"></i>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.grafana_url %}
+              <a href="{{ row.grafana_url }}" target="_blank" rel="noopener" title="{% trans 'Open in Grafana' %}">
+                <i class="mdi mdi-chart-line" aria-hidden="true"></i>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="10" class="text-muted">{% trans "No free ports found." %}</td></tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% if form.non_field_errors %}
+  {% for e in form.non_field_errors %}
+  <div class="alert alert-warning mt-2 mb-0 py-2">
+    <i class="mdi mdi-alert" aria-hidden="true"></i> {{ e }}
+  </div>
+  {% endfor %}
+  {% endif %}
+</form>
+
+{% if searched %}
+  {% if error %}
+  <div class="alert alert-danger mt-2">
+    <i class="mdi mdi-alert" aria-hidden="true"></i> {% trans "Netdisco free-ports report unavailable:" %} {{ error }}
+  </div>
+  {% elif truncated %}
+  <div class="alert alert-warning mt-2">
+    {% blocktrans trimmed with shown=rows|length %}
+    Showing {{ shown }} of {{ total }} rows — refine your search for the full list (sorting only covers the rows shown).
+    {% endblocktrans %}
+  </div>
+  {% endif %}
+{% endif %}
+{% include "netbox_lens/sortable_table.html" %}
+{% endblock %}

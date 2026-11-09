@@ -1,0 +1,42 @@
+{# Client-side column sort for tables marked .lens-sortable: click a th[data-sort-type] #}
+{# ("num" or "text") in the first header row; cells sort by data-sort, else their text. #}
+<style>
+  .lens-sortable th[data-sort-type] { cursor: pointer; user-select: none; white-space: nowrap; }
+  .lens-sortable th[data-sort-type]::after { content: "\F04E1"; font-family: "Material Design Icons"; opacity: .3; margin-left: .25em; }
+  .lens-sortable th[data-sort-dir="asc"]::after { content: "\F005D"; opacity: 1; }
+  .lens-sortable th[data-sort-dir="desc"]::after { content: "\F0045"; opacity: 1; }
+</style>
+<script>
+(function () {
+  document.querySelectorAll("table.lens-sortable").forEach(function (table) {
+    var headers = table.tHead.rows[0].cells;
+    Array.prototype.forEach.call(headers, function (th, col) {
+      if (!th.dataset.sortType) return;
+      th.addEventListener("click", function () {
+        var dir = th.dataset.sortDir === "asc" ? "desc" : "asc";
+        Array.prototype.forEach.call(headers, function (h) { delete h.dataset.sortDir; });
+        th.dataset.sortDir = dir;
+        var num = th.dataset.sortType === "num";
+        var body = table.tBodies[0];
+        var rows = Array.prototype.filter.call(body.rows, function (r) { return r.cells.length > col; });
+        var key = function (row) {
+          var cell = row.cells[col];
+          var v = cell.dataset.sort !== undefined ? cell.dataset.sort : cell.textContent.trim();
+          if (!num) return v;
+          var n = parseFloat(v);
+          return isNaN(n) ? -Infinity : n;
+        };
+        var sign = dir === "asc" ? 1 : -1;
+        rows.map(function (r, i) { return [key(r), i, r]; })
+          .sort(function (a, b) {
+            // numeric collation for text, so Gi1/0/10 sorts after Gi1/0/9
+            var c = num ? (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+                        : a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: "base" });
+            return c ? c * sign : a[1] - b[1];
+          })
+          .forEach(function (e) { body.appendChild(e[2]); });
+      });
+    });
+  });
+})();
+</script>

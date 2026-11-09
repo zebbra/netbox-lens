@@ -25,7 +25,8 @@ from .backends import get_backends
 from .backends.base import SearchResult
 from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
-from .forms import ArpHistoryForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
+from .down_ports import build_down_ports
+from .forms import ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
 from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context
 from .mac_history import build_mac_history
@@ -371,9 +372,9 @@ class LensSearchView(PermissionRequiredMixin, View):
 
                 _enrich_results(results)
                 _enrich_sightings(results, backends, config.get("victoria_metrics", {}))
-                for b, r in zip(backends, results):
+                for r in results:
                     if r:
-                        apply_transit_ports(r.sightings or [], [b], "switch")
+                        apply_transit_ports(r.sightings or [])
                 context["results"] = results
                 context["query"] = query
                 context["query_note"] = form.cleaned_data.get("q_note")
@@ -406,7 +407,7 @@ class LensSearchHistoryView(PermissionRequiredMixin, View):
         result = SearchResult(backend=backend.name, label=backend.label, icon=backend.icon,
                               sightings=sightings, history_macs=macs)
         _enrich_sightings([result], [backend], config.get("victoria_metrics", {}))
-        apply_transit_ports(result.sightings or [], [backend], "switch")
+        apply_transit_ports(result.sightings or [])
         return render(request, "netbox_lens/search_sightings.html", {
             "backend": result, "history": True, "history_error": error,
         })
@@ -714,7 +715,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                 )
                 _enrich_mac_history(rows)
                 _apply_wireless(rows, backends)
-                apply_transit_ports(rows, backends, "device_ip")
+                apply_transit_ports(rows)
                 if request.GET.get("export") == "csv":
                     return _csv_response(
                         "mac_history.csv",
@@ -888,6 +889,75 @@ class LensInterfaceSearchView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/interface_search.html", context)
 
 
+class LensDownPortsView(PermissionRequiredMixin, View):
+    """Access ports free for reuse: no MAC seen for N days, from Netdisco's
+    portfree report (one call for the whole fleet)."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        data = request.GET.copy()
+        data.setdefault("min_days", "30")
+        data.setdefault("admin", "any")
+        data.setdefault("oper", "down")
+        form = DownPortsForm(data)
+        context = {"form": form}
+
+        if form.is_valid():
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            backend = next((b for b in get_backends(config) if hasattr(b, "free_ports")), None)
+            cd = form.cleaned_data
+            if backend is None:
+                rows, total, truncated, error = [], 0, False, "Netdisco backend not configured"
+            else:
+                rows, total, truncated, error = build_down_ports(
+                    backend,
+                    min_days=cd["min_days"],
+                    oper=cd["oper"],
+                    admin=cd["admin"],
+                    device_query=cd.get("device") or None,
+                    interface_query=cd.get("interface") or None,
+                    description_query=cd.get("description") or None,
+                    vlan_query=cd.get("vlan") or None,
+                    grafana_template=config.get("grafana_interface_url"),
+                )
+
+            if request.GET.get("export") == "csv" and not error:
+                return _csv_response(
+                    "down-ports.csv",
+                    [
+                        ("Element name", lambda r: r.get("device_name")),
+                        ("Interface (ifDescr)", lambda r: r.get("interface_name")),
+                        ("Description (ifAlias)", lambda r: r.get("description")),
+                        ("VLAN", lambda r: r.get("vlan")),
+                        ("Speed", lambda r: r.get("speed")),
+                        ("Managed", lambda r: r.get("managed")),
+                        ("If admin.", lambda r: r.get("admin")),
+                        ("If oper.", lambda r: r.get("oper")),
+                        ("Days unused", lambda r: r.get("age_days")),
+                        ("Unused since", lambda r: r.get("free_since")),
+                        ("Days unused based on", lambda r: {"mac": "last MAC", "lastchange": "link change", "boot": "at least since boot"}.get(r.get("age_basis"), "unknown")),
+                        ("Last MAC seen", lambda r: r.get("last_mac_seen")),
+                        ("Last MAC", lambda r: r.get("last_mac")),
+                        ("Last macsuck", lambda r: r.get("last_macsuck")),
+                        ("Last discover", lambda r: r.get("last_discover")),
+                        ("Link last change", lambda r: r.get("lastchange_stamp")),
+                        ("Device boot", lambda r: r.get("device_boot")),
+                    ],
+                    rows,
+                )
+
+            context.update({
+                "rows": rows,
+                "total": total,
+                "truncated": truncated,
+                "error": error,
+                "searched": True,
+                "min_days": cd["min_days"],
+            })
+
+        return render(request, "netbox_lens/down_ports.html", context)
+
+
 class LensNacStatusView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.use_lens"
 
@@ -936,7 +1006,7 @@ if NbDevice:
         additional_permissions = ["netbox_lens.use_lens"]
         template_name = "netbox_lens/device_macarp.html"
         tab = ViewTab(
-            label="IP/MAC Table",
+            label="MAC Table",
             visible=_is_switch_or_router,
             permission="netbox_lens.use_lens",
         )
@@ -1076,7 +1146,7 @@ class LensDeviceMacArpDataView(PermissionRequiredMixin, View):
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             backends = get_backends(config)
             rows, total, truncated, _ = build_mac_history(backends, device_ip=ip, max_rows=MAX_MACARP_ROWS)
-            apply_transit_ports(rows, backends, "device_ip")
+            apply_transit_ports(rows)
             iface_map = {}
             if NbInterface:
                 iface_map = {

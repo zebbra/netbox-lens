@@ -43,20 +43,20 @@
 {% endif %}
 <form method="get">
   <div class="table-responsive">
-    <table class="table table-hover table-headings mb-0">
+    <table class="table table-hover table-headings mb-0 lens-sortable">
       <thead>
         <tr>
-          <th>{% trans "Element name" %}</th>
-          <th>{% trans "Interface (ifDescr)" %}</th>
-          <th>{% trans "Description (ifAlias)" %}</th>
-          <th>{% trans "VLAN" %}</th>
-          <th>{% trans "Speed" %}</th>
-          <th>{% trans "Managed" %}</th>
-          <th>{% trans "If admin." %}</th>
-          <th>{% trans "If oper." %}</th>
-          <th>{% trans "Type" %}</th>
-          <th>{% trans "PoE type" %}</th>
-          <th>{% if page_title == "Down Ports" %}{% trans "Down Since" %}{% else %}{% trans "Updated" %}{% endif %}</th>
+          <th data-sort-type="text">{% trans "Element name" %}</th>
+          <th data-sort-type="text">{% trans "Interface (ifDescr)" %}</th>
+          <th data-sort-type="text">{% trans "Description (ifAlias)" %}</th>
+          <th data-sort-type="num">{% trans "VLAN" %}</th>
+          <th data-sort-type="text">{% trans "Speed" %}</th>
+          <th data-sort-type="text">{% trans "Managed" %}</th>
+          <th data-sort-type="text">{% trans "If admin." %}</th>
+          <th data-sort-type="text">{% trans "If oper." %}</th>
+          <th data-sort-type="text">{% trans "Type" %}</th>
+          <th data-sort-type="text">{% trans "PoE type" %}</th>
+          <th data-sort-type="text">{% trans "Updated" %}</th>
           <th></th>
         </tr>
         <tr>
@@ -111,20 +111,20 @@
             <td><a href="{{ row.nb_device_url }}">{{ row.device_name }}</a></td>
             <td><a href="{{ row.nb_interface_url }}">{{ row.interface_name }}</a></td>
             <td>{{ row.description|default:"—" }}</td>
-            <td>{{ row.vlan|default:"—" }}</td>
+            <td data-sort="{{ row.vlan|default:'' }}">{{ row.vlan|default:"—" }}</td>
             <td>{{ row.speed|default:"—" }}</td>
             <td>{{ row.managed|default:"—" }}</td>
-            <td>{{ row.admin }}</td>
-            <td>
-              {{ row.oper|default:"—" }}
+            <td data-sort="{{ row.admin|default:'' }}">{{ row.admin|lens_status_icon:"admin" }}</td>
+            <td data-sort="{{ row.oper|default:'' }}" class="text-nowrap">
+              {{ row.oper|lens_status_icon:"oper" }}
               {% if row.oper_source == "netdisco" %}
-              <i class="mdi mdi-clock-outline text-muted" aria-hidden="true"
-                 title="{% trans 'Netdisco last discovery:' %} {% if row.oper_as_of %}{{ row.oper_as_of|lens_absolute }} ({{ row.oper_as_of|lens_relative }}){% else %}{% trans 'unknown' %}{% endif %}"></i>
+              <i class="mdi mdi-clock-outline {{ row.oper_as_of|lens_stale_class }}" aria-hidden="true"
+                 title="{% if row.oper_as_of %}{% blocktrans with ago=row.oper_as_of|lens_ago %}Last discovered {{ ago }}{% endblocktrans %}{% else %}{% trans 'Never discovered' %}{% endif %}"></i>
               {% endif %}
             </td>
             <td>{{ row.type|default:"—" }}</td>
             <td>{{ row.poe_type|default:"—" }}</td>
-            <td><span title="{{ row.updated|lens_absolute }}">{{ row.updated|lens_relative }}</span></td>
+            <td data-sort="{{ row.updated|default:'' }}"><span title="{{ row.updated|lens_absolute }}">{{ row.updated|lens_relative }}</span></td>
             <td>
               {% if row.grafana_url %}
               <a href="{{ row.grafana_url }}" target="_blank" rel="noopener" title="{% trans 'Open in Grafana' %}">
@@ -162,4 +162,5 @@
   </div>
   {% endif %}
 {% endif %}
+{% include "netbox_lens/sortable_table.html" %}
 {% endblock %}

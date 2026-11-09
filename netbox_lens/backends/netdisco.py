@@ -522,9 +522,6 @@ class NetdiscoBackend(LensBackend):
                     "up_admin": p.get("up_admin"),
                     "vlan": p.get("vlan"),
                     "type": p.get("type"),
-                    # topology, for telling transit ports from edge ports
-                    "remote_ip": p.get("remote_ip"),
-                    "slave_of": p.get("slave_of"),
                 }
                 for p in data
             ]
@@ -562,6 +559,38 @@ class NetdiscoBackend(LensBackend):
             return {p.get("port") for p in data if p.get("port")}
         except Exception:
             return None
+
+    def free_ports(self, age_num: int = 30, up: str = "down", up_admin: str = "any",
+                   device: str | None = None):
+        """Fleet-wide "free ports" in one call: Netdisco's portfree report.
+        A port qualifies when no MAC was seen on it for age_num days (or never);
+        LAG/virtual ports and ports with a CDP/LLDP neighbor are left out.
+
+        Returns (rows, error): rows is a list on success, None on failure."""
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return None, "Netdisco not configured"
+        params = {"age_num": age_num, "age_unit": "days", "up": up, "up_admin": up_admin}
+        if device:
+            params["device"] = device
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/report/port/portfree",
+                params=params,
+                headers={
+                    "Authorization": f"Bearer {self._viewer_token()}",
+                    "Accept": "application/json",
+                },
+                timeout=self.config.get("report_timeout", 60),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else []
+        except Exception as exc:
+            return None, str(exc)
+        if not isinstance(data, list):
+            return None, "unexpected response from Netdisco"
+        return data, None
 
     def device_last_discover(self, device_ip: str):
         """Netdisco's device_port.up/up_admin are populated by its "discover"

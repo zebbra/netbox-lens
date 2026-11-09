@@ -10,16 +10,9 @@ urlpatterns = [
     path("mac-history/", views.LensMacHistoryView.as_view(), name="mac_history"),
     path("arp-history/", views.LensArpHistoryView.as_view(), name="arp_history"),
     path("interfaces/", views.LensInterfaceSearchView.as_view(), name="interface_search"),
-    path(
-        "down-ports/",
-        # Down Ports means "should be up but isn't": admin-enabled (NetBox)
-        # yet operationally down (VictoriaMetrics interfaceUpDownState) —
-        # not NetBox's admin=down, which is just administratively disabled.
-        views.LensInterfaceSearchView.as_view(
-            page_title="Down Ports", default_filters={"admin": "up", "oper": "down"}
-        ),
-        name="down_ports",
-    ),
+    # Down Ports = access ports free for reuse (no MAC for N days), from
+    # Netdisco's portfree report — not "admin up but oper down".
+    path("down-ports/", views.LensDownPortsView.as_view(), name="down_ports"),
     path("nac-status/", views.LensNacStatusView.as_view(), name="nac_status"),
     path("status/", views.LensStatusView.as_view(), name="status"),
     path("discover/<int:pk>/", views.LensTriggerJobView.as_view(job_method="trigger_discover"), name="discover"),
