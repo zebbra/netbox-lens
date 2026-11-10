@@ -1,0 +1,92 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+{% load lens_filters %}
+
+{% block title %}LENS – {% trans "Bulk Sync" %}{% endblock %}
+
+{% block content %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-information-outline" aria-hidden="true"></i>
+  {% blocktrans trimmed %}
+  Queues a discobox sync (Netdisco → NetBox, database only) for each device below. It returns at once;
+  the syncs run in the background and devices synced recently are skipped unless forced.
+  {% endblocktrans %}
+</div>
+{% include "netbox_lens/bulk_header.html" %}
+
+{% if no_ip_count %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-alert-outline text-warning" aria-hidden="true"></i>
+  {% blocktrans trimmed count counter=no_ip_count %}
+  {{ counter }} device left out: no primary IPv4 (see Refresh IPs).
+  {% plural %}
+  {{ counter }} devices left out: no primary IPv4 (see Refresh IPs).
+  {% endblocktrans %}
+</div>
+{% endif %}
+
+{% if result %}
+<div class="alert alert-success">
+  <i class="mdi mdi-check-circle" aria-hidden="true"></i>
+  {% blocktrans trimmed with queued=result.queued|default:0 %}{{ queued }} queued{% endblocktrans %}{% if forced %} ({% trans "forced" %}){% endif %}
+  {% if result.in_progress %} · {{ result.in_progress }} {% trans "already running" %}{% endif %}
+  {% if result.cooldown %} · {{ result.cooldown }} {% trans "in cooldown" %}{% endif %}
+  {% if result.queue_full %} · <span class="text-danger">{{ result.queue_full }} {% trans "queue full" %}</span>{% endif %}
+  {% if result.not_in_netdisco %} · {{ result.not_in_netdisco }} {% trans "not in Netdisco" %}{% endif %}
+  {% if result.invalid %} · {{ result.invalid }} {% trans "invalid" %}{% endif %}
+  {% if result.recent %} · {{ result.recent }} {% trans "synced recently (skipped)" %}{% endif %}
+</div>
+{% elif result_error %}
+<div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ result_error }}</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}</div>
+{% elif too_many %}
+<div class="alert alert-warning">
+  {% blocktrans trimmed %}More than {{ too_many }} devices match. Narrow the filter (e.g. by site or role).{% endblocktrans %}
+</div>
+{% elif not matched %}
+<div class="text-muted">{% trans "No devices with a primary IPv4 match this filter." %}</div>
+{% else %}
+<form method="post" class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  {% csrf_token %}
+  <input type="hidden" name="filter_qs" value="{{ filter_qs }}">
+  <button type="submit" class="btn btn-success btn-sm">
+    <i class="mdi mdi-sync" aria-hidden="true"></i>
+    {% blocktrans trimmed count counter=matched %}Queue sync for {{ counter }} device{% plural %}Queue sync for {{ counter }} devices{% endblocktrans %}
+  </button>
+  {% if can_force %}
+  <button type="submit" name="force" value="true" class="btn btn-outline-warning btn-sm"
+          title="{% trans 'Force: skip the cooldown, also sync devices synced recently (admin)' %}">
+    <i class="mdi mdi-sync-alert" aria-hidden="true"></i> {% trans "Force" %}
+  </button>
+  {% endif %}
+</form>
+<div class="table-responsive">
+  <table class="table table-hover table-headings mb-0 lens-sortable">
+    <thead>
+      <tr>
+        <th data-sort-type="text">{% trans "Device" %}</th>
+        <th data-sort-type="text">{% trans "Primary IPv4" %}</th>
+        <th data-sort-type="text">{% trans "Role" %}</th>
+        <th data-sort-type="text">{% trans "Site" %}</th>
+        <th data-sort-type="text">{% trans "Netdisco Sync" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><a href="{{ r.url }}">{{ r.name }}</a></td>
+        <td>{{ r.ip }}</td>
+        <td>{{ r.role|default:"—" }}</td>
+        <td>{{ r.site|default:"—" }}</td>
+        <td data-sort="{{ r.last_sync|default:'' }}"><span title="{{ r.last_sync|lens_absolute }}">{{ r.last_sync|lens_relative|default:"—" }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% include "netbox_lens/sortable_table.html" %}
+{% endblock %}

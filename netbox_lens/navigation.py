@@ -58,6 +58,11 @@ menu = PluginMenu(
                     link_text=_("Refresh IPs"),
                     permissions=["netbox_lens.trigger_lens"],
                 ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:bulk_sync",
+                    link_text=_("Sync"),
+                    permissions=["netbox_lens.trigger_lens"],
+                ),
             ),
         ),
         (

@@ -12,14 +12,34 @@
   <span class="badge text-bg-success">{% trans "Applied" %}</span>
   {% endif %}
 </div>
-{% if entry.action == "unchanged" %}
+{% if entry.holder %}
+<div class="alert alert-warning mb-2">
+  <a href="{{ entry.holder.ip_url }}">{{ entry.new }}</a> {% include "netbox_lens/refresh_ip_holder.html" with holder=entry.holder %}
+</div>
+{% if entry.holder.movable %}
+<button type="button" class="btn btn-sm btn-outline-warning"
+        hx-post="{% url 'plugins:netbox_lens:refresh_ip' pk=device.pk %}"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        hx-vals='{"dry_run": "true", "move": "true"}'
+        hx-target="#lens-refresh-ip-body" hx-swap="innerHTML">
+  <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i> {% trans "Move here…" %}
+</button>
+{% endif %}
+{% elif entry.action == "unchanged" %}
 <div class="alert alert-info mb-0">
   {% blocktrans trimmed with ip=entry.new|default:entry.old %}Primary IPv4 is already {{ ip }}, nothing to do.{% endblocktrans %}
 </div>
 {% else %}
 <table class="table table-sm mb-3">
   <tbody>
-    <tr><th>{% trans "Action" %}</th><td>{% if entry.action == "replace" %}<span class="badge text-bg-danger">{% trans "replace" %}</span>{% else %}<span class="badge text-bg-primary">{% trans "set" %}</span>{% endif %}</td></tr>
+    <tr><th>{% trans "Action" %}</th><td>{% if entry.action == "replace" %}<span class="badge text-bg-danger">{% trans "replace" %}</span>{% elif entry.action == "move" %}<span class="badge text-bg-warning">{% trans "move" %}</span>{% else %}<span class="badge text-bg-primary">{% trans "set" %}</span>{% endif %}</td></tr>
+    {% if entry.action == "move" %}
+    <tr><th>{% trans "Taken from" %}</th><td>
+      {% if entry.from_device_id %}<a href="{% url 'dcim:device' pk=entry.from_device_id %}">{{ entry.from_device }}</a>{% else %}{{ entry.from_device }}{% endif %}
+      {% if entry.from_interface_id %}<a href="{% url 'dcim:interface' pk=entry.from_interface_id %}">{{ entry.from_interface }}</a>{% else %}{{ entry.from_interface }}{% endif %}
+      {% if entry.from_primary %}<div class="text-danger small"><i class="mdi mdi-alert" aria-hidden="true"></i> {% if dry_run %}{% blocktrans trimmed with dev=entry.from_device %}It is the primary IPv4 of {{ dev }}, which is left without one.{% endblocktrans %}{% else %}{% blocktrans trimmed with dev=entry.from_device %}{{ dev }} has no primary IPv4 now.{% endblocktrans %}{% endif %}</div>{% endif %}
+    </td></tr>
+    {% endif %}
     <tr><th>{% trans "Current primary IPv4" %}</th><td>{{ entry.old|default:"—" }}</td></tr>
     <tr><th>{% trans "New primary IPv4" %}</th><td>{{ entry.address|default:entry.new }}{% if entry.address_created %} <span class="text-muted small">({% trans "new IP address" %})</span>{% endif %}</td></tr>
     <tr><th>{% trans "Resolved via" %}</th><td>{% if entry.source == "dns" %}DNS{% else %}Netdisco{% endif %}{% if entry.resolved %} <span class="text-muted">({{ entry.resolved }})</span>{% endif %}</td></tr>
@@ -31,9 +51,10 @@
       hx-target="#lens-refresh-ip-body" hx-swap="innerHTML" hx-indicator="#lens-refresh-ip-spinner">
   {% csrf_token %}
   <input type="hidden" name="dry_run" value="false">
-  <button type="submit" class="btn {% if entry.action == 'replace' %}btn-danger{% else %}btn-primary{% endif %} btn-sm">
-    <i class="mdi mdi-ip-network" aria-hidden="true"></i>
-    {% if entry.action == "replace" %}{% trans "Replace primary IPv4" %}{% else %}{% trans "Set primary IPv4" %}{% endif %}
+  {% if entry.action == "move" %}<input type="hidden" name="move" value="true">{% endif %}
+  <button type="submit" class="btn {% if entry.action == 'replace' %}btn-danger{% elif entry.action == 'move' %}btn-warning{% else %}btn-primary{% endif %} btn-sm">
+    <i class="mdi {% if entry.action == 'move' %}mdi-swap-horizontal{% else %}mdi-ip-network{% endif %}" aria-hidden="true"></i>
+    {% if entry.action == "replace" %}{% trans "Replace primary IPv4" %}{% elif entry.action == "move" %}{% blocktrans trimmed with dev=entry.from_device %}Move from {{ dev }} to this device{% endblocktrans %}{% else %}{% trans "Set primary IPv4" %}{% endif %}
   </button>
 </form>
 {% else %}

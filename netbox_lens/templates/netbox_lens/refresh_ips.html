@@ -12,21 +12,25 @@
   {% endblocktrans %}
 </div>
 
-<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-  <span class="text-muted small">{% trans "Filter" %}:</span>
-  {% for key, values in filter_params.lists %}
-    {% for v in values %}<span class="badge text-bg-secondary">{{ key }}={{ v }}</span>{% endfor %}
-  {% endfor %}
-  <a href="{% url 'dcim:device_list' %}?{{ filter_qs }}" class="btn btn-sm btn-outline-secondary py-0">
-    <i class="mdi mdi-filter-variant" aria-hidden="true"></i> {% trans "Edit in device list" %}
-  </a>
-  {% if not dry_run %}
+{% include "netbox_lens/bulk_header.html" %}
+{% if not dry_run %}
+<div class="mb-3">
   <a href="?{{ filter_qs }}" class="btn btn-sm btn-outline-primary py-0">
     <i class="mdi mdi-refresh" aria-hidden="true"></i> {% trans "Preview again" %}
   </a>
-  {% endif %}
 </div>
+{% endif %}
 
+{% if excluded_count %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-cancel" aria-hidden="true"></i>
+  {% blocktrans trimmed count counter=excluded_count with roles=excluded_roles|join:", " %}
+  {{ counter }} device left out: role {{ roles }} is never refreshed.
+  {% plural %}
+  {{ counter }} devices left out: role {{ roles }} is never refreshed.
+  {% endblocktrans %}
+</div>
+{% endif %}
 {% if error %}
 <div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}</div>
 {% elif too_many %}
@@ -84,11 +88,23 @@
             {% else %}<span class="badge text-bg-secondary">unchanged</span>{% endif %}
           </td>
           <td>{{ e.old|default:"—" }}</td>
-          <td>{% if e.action == "unchanged" %}—{% else %}{{ e.address|default:e.new|default:"—" }}{% endif %}</td>
+          <td>{% if e.action == "unchanged" %}—{% elif e.holder %}<a href="{{ e.holder.ip_url }}">{{ e.new }}</a>{% else %}{{ e.address|default:e.new|default:"—" }}{% endif %}</td>
           <td>{% if e.source == "dns" %}DNS{% elif e.source == "netdisco" %}Netdisco{% else %}—{% endif %}{% if e.resolved %} <span class="text-muted small">{{ e.resolved }}</span>{% endif %}</td>
           <td>{{ e.interface|default:"—" }}</td>
           <td class="small">
-            {% if e.error %}<span class="text-danger">{{ e.error }}</span>{% endif %}
+            {% if e.holder %}<span class="text-danger">{% include "netbox_lens/refresh_ip_holder.html" with holder=e.holder %}</span>
+            {% if e.holder.movable and dry_run %}
+            <button type="button" class="btn btn-sm btn-outline-warning py-0 px-1 ms-1" data-bs-toggle="modal"
+                    data-bs-target="#lens-refresh-ip-modal"
+                    hx-post="{% url 'plugins:netbox_lens:refresh_ip' pk=e.id %}"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    hx-vals='{"dry_run": "true", "move": "true"}'
+                    hx-target="#lens-refresh-ip-body" hx-swap="innerHTML"
+                    title="{% blocktrans trimmed with dev=e.holder.device target=e.device %}Preview moving this IP from {{ dev }} to {{ target }}{% endblocktrans %}">
+              <i class="mdi mdi-swap-horizontal" aria-hidden="true"></i> {% trans "Move here" %}
+            </button>
+            {% endif %}
+            {% elif e.error %}<span class="text-danger">{{ e.error }}</span>{% endif %}
             {% if e.interface_created %}{% trans "new interface" %}{% endif %}{% if e.interface_created and e.address_created %}, {% endif %}{% if e.address_created %}{% trans "new IP address" %}{% endif %}
           </td>
         </tr>
@@ -104,6 +120,20 @@
   {% endif %}
 </form>
 {% endif %}
+
+<div class="modal fade" id="lens-refresh-ip-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% trans "Move primary IPv4" %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lens-refresh-ip-body">
+        <div class="text-muted">{% trans "Loading preview…" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 (function () {

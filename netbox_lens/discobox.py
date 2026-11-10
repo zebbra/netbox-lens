@@ -152,7 +152,7 @@ def sync_device(config, device_ip, force=False):
         return False, None, str(exc)
 
 
-def refresh_ip(config, device_ids, dry_run=True):
+def refresh_ip(config, device_ids, dry_run=True, move=False):
     """
     Call discobox's /refresh-ip for NetBox devices (one id or a list of ids;
     LENS resolves filters itself so preview and apply cover the same
@@ -176,6 +176,9 @@ def refresh_ip(config, device_ids, dry_run=True):
         device_ids = [device_ids]
     params = [("device", str(i)) for i in device_ids]
     params.append(("dry_run", "true" if dry_run else "false"))
+    if move:
+        # take the IP from the device it is assigned to (one device only)
+        params.append(("move", "true"))
     try:
         resp = requests.request(
             "GET" if dry_run else "POST",
@@ -189,6 +192,45 @@ def refresh_ip(config, device_ids, dry_run=True):
             try:
                 body = resp.json()
                 reason = body.get("error") or body.get("detail") or body.get("reason")
+            except ValueError:
+                reason = None
+            return False, None, reason or f"HTTP {resp.status_code} from discobox"
+        return True, resp.json() if resp.content else {}, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)
+
+
+def sync_all(config, device_ids, force=False):
+    """
+    Call discobox's POST /sync/all for the given NetBox device ids (sent as
+    id filters): queues a sync per device and returns at once with counters
+    {"status", "selected", "queued", "cooldown", "queue_full", "in_progress",
+    "invalid", "not_in_netdisco", ...}. Without force, devices synced
+    recently are skipped by discobox's touch cooldown.
+
+    Returns (ok, data, error).
+    """
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "Discobox URL is not configured."
+    headers = {"Accept": "application/json"}
+    token = config.get("token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    params = [("id", str(i)) for i in device_ids]
+    if force:
+        params.append(("force", "true"))
+    try:
+        resp = requests.post(
+            f"{base_url}/sync/all",
+            headers=headers,
+            params=params,
+            timeout=config.get("timeout", DEFAULT_TIMEOUT),
+            verify=config.get("verify_ssl", True),
+        )
+        if resp.status_code >= 400:
+            try:
+                reason = resp.json().get("detail")
             except ValueError:
                 reason = None
             return False, None, reason or f"HTTP {resp.status_code} from discobox"

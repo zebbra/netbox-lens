@@ -21,6 +21,9 @@ class LensConfig(PluginConfig):
         # Device role slugs of APs: a MAC History / search row whose MAC is
         # one of their interfaces shows as "AP" in the Connection column.
         "ap_roles": ["lwapp-ap"],
+        # Device role slugs Refresh IP never touches (single and bulk): APs
+        # get their address from DHCP, a DNS/Netdisco lookup isn't theirs.
+        "refresh_ip_exclude_roles": ["lwapp-ap"],
         # Time zone of timestamps that arrive without one (Netdisco's are UTC).
         "naive_timezone": "UTC",
     }
