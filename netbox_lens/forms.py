@@ -330,9 +330,9 @@ ADMIN_ANY_CHOICES = [
 
 # What a port's "days unused" is based on (portfree's free_since_basis).
 BASIS_CHOICES = [
-    ("mac", "MAC"),
-    ("lastchange", "Link"),
-    ("boot", "Boot"),
+    ("mac", "Last MAC"),
+    ("lastchange", "Link change"),
+    ("boot", "Reboot"),
     ("unknown", "Unknown"),
 ]
 
@@ -345,6 +345,7 @@ class DownPortsForm(forms.Form):
     interface = copy.deepcopy(InterfaceSearchForm.base_fields["interface"])
     description = copy.deepcopy(InterfaceSearchForm.base_fields["description"])
     vlan = copy.deepcopy(InterfaceSearchForm.base_fields["vlan"])
+    vlan.widget.attrs["style"] = "width: 5em"
     admin = forms.ChoiceField(
         label="If admin.",
         choices=ADMIN_ANY_CHOICES,

@@ -32,7 +32,7 @@
           <th data-sort-type="text">{% trans "If oper." %}</th>
           <th data-sort-type="num">{% trans "Days unused" %}</th>
           <th data-sort-type="text">{% trans "Unused since" %}</th>
-          <th>{% trans "Sources" %}</th>
+          <th class="text-center" style="width: 1%">{% trans "Sources" %}</th>
           <th></th>
         </tr>
         <tr>
@@ -46,15 +46,16 @@
           <th>{{ form.oper }}</th>
           <th>
             <div class="d-flex align-items-center gap-1"><span class="small text-muted">≥</span>{{ form.min_days }}</div>
-            <div class="lens-basis mt-1 small fw-normal text-nowrap"
-                 title="{% trans 'What the days are based on: last MAC, link change, reboot (lower bound) or unknown.' %}">
+          </th>
+          <th></th>
+          <th>
+            {# filter on what the days are based on; same icons as the column #}
+            <div class="lens-basis small fw-normal text-nowrap">
               {% for cb in form.basis %}
-              <label class="d-flex align-items-center gap-1">{{ cb.tag }}{{ cb.choice_label }}</label>
+              <label class="d-flex align-items-center gap-1" title="{{ cb.choice_label }}">{{ cb.tag }}<i class="mdi {% if cb.data.value == 'mac' %}mdi-lan-connect{% elif cb.data.value == 'lastchange' %}mdi-link-variant{% elif cb.data.value == 'boot' %}mdi-restart{% else %}mdi-help-circle-outline{% endif %}" aria-label="{{ cb.choice_label }}"></i></label>
               {% endfor %}
             </div>
           </th>
-          <th></th>
-          <th></th>
           <th>
             <div class="d-flex gap-1">
               <button type="submit" class="btn btn-primary btn-sm">
@@ -97,10 +98,10 @@
             <td data-sort="{{ row.free_since|default:'' }}" class="text-nowrap">
               {% if row.free_since %}<span title="{{ row.free_since|lens_ago }}">{{ row.free_since|lens_datetime }}</span>{% else %}—{% endif %}
             </td>
-            <td class="text-nowrap">
+            <td class="text-nowrap text-center">
               {% for src in row.sources %}
               <i class="mdi {{ src.icon }} {% if src.used %}text-primary{% elif src.ts %}text-secondary{% else %}text-muted opacity-25{% endif %}"
-                 title="{{ src.label }}: {% if src.ts %}{{ src.ts|lens_absolute }} ({{ src.ts|lens_ago }}){% if src.extra %} · {{ src.extra }}{% endif %}{% if src.used %} · {% trans 'used for days unused' %}{% endif %}{% else %}{% trans 'not known' %}{% endif %}"></i>
+                 title="{{ src.label }}: {% if src.ts %}{{ src.ts|lens_absolute }} ({{ src.ts|lens_ago }}){% if src.extra %} · {{ src.extra }}{% endif %}{% else %}{% trans 'not known' %}{% endif %}"></i>
               {% endfor %}
               {% if row.age_clock %}
               <i class="mdi mdi-clock-outline ms-1 {{ row.age_clock|lens_stale_class }}" aria-hidden="true"
@@ -152,7 +153,7 @@
   {% endif %}
 {% endif %}
 <style>
-  .lens-basis { display: grid; grid-template-columns: auto auto; column-gap: .75em; text-transform: none; }
+  .lens-basis { display: grid; grid-template-columns: auto auto; column-gap: .5em; text-transform: none; }
   table .lens-basis input.form-check-input { width: 1em; height: 1em; min-width: 1em; margin: 0; padding: 0; background-size: .75em; }
 </style>
 {% include "netbox_lens/sortable_table.html" %}
