@@ -46,6 +46,21 @@ def _age(p):
     return basis, p.get("days_free"), clock
 
 
+def _sources(p, basis):
+    """What Netdisco knows about when the port was last in use, for the
+    Sources column: each with its timestamp, whether it's there at all, and
+    whether it's the one days unused is based on."""
+    lastchange = p.get("lastchange_stamp") if basis != "boot" else None
+    return [
+        {"key": "mac", "label": "Last MAC", "icon": "mdi-lan-connect",
+         "ts": p.get("last_mac_seen"), "extra": p.get("last_mac"), "used": basis == "mac"},
+        {"key": "lastchange", "label": "Link change", "icon": "mdi-link-variant",
+         "ts": lastchange, "extra": None, "used": basis == "lastchange"},
+        {"key": "boot", "label": "Reboot", "icon": "mdi-restart",
+         "ts": p.get("device_boot"), "extra": None, "used": basis == "boot"},
+    ]
+
+
 def _netbox_maps(ips):
     """{ip: Device} and {(device_id, name): Interface} for the report's devices."""
     if not NbDevice or not ips:
@@ -133,6 +148,8 @@ def build_down_ports(backend, min_days=30, oper="down", admin="any", basis=None,
             "age_basis": basis,
             "age_days": age_days,
             "age_clock": age_clock,
+            "sources": _sources(p, basis),
+            "last_macsuck_seen": p.get("last_macsuck"),
             "last_discover": p.get("last_discover"),
             "free_since": p.get("free_since"),
             "lastchange_stamp": p.get("lastchange_stamp"),

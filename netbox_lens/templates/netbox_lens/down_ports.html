@@ -9,10 +9,11 @@
   <i class="mdi mdi-information-outline" aria-hidden="true"></i>
   {% blocktrans trimmed %}
   Access ports free for reuse: no MAC seen on the port for at least the given number of days, or never.
-  Uplinks (CDP/LLDP neighbor), LAGs and virtual ports are left out. Data from Netdisco's MAC tables;
-  the clock shows how old a device's last MAC poll (macsuck) is. Ports without any known MAC
-  get their age from the link change instead (<i class="mdi mdi-link-variant" aria-hidden="true"></i>, less reliable).
-  Longest unused first.
+  Uplinks (CDP/LLDP neighbor), LAGs and virtual ports are left out. Longest unused first.
+  Sources: last MAC <i class="mdi mdi-lan-connect" aria-hidden="true"></i>, link change
+  <i class="mdi mdi-link-variant" aria-hidden="true"></i> (less reliable) and reboot
+  <i class="mdi mdi-restart" aria-hidden="true"></i>; the highlighted one is what the days are based on.
+  The clock shows how fresh that data is.
   With If oper. = Up it lists ports that are up but silent, e.g. a client failing NAC.
   {% endblocktrans %}
 </div>
@@ -30,6 +31,8 @@
           <th data-sort-type="text">{% trans "If admin." %}</th>
           <th data-sort-type="text">{% trans "If oper." %}</th>
           <th data-sort-type="num">{% trans "Days unused" %}</th>
+          <th data-sort-type="text">{% trans "Unused since" %}</th>
+          <th>{% trans "Sources" %}</th>
           <th></th>
         </tr>
         <tr>
@@ -50,6 +53,8 @@
               {% endfor %}
             </div>
           </th>
+          <th></th>
+          <th></th>
           <th>
             <div class="d-flex gap-1">
               <button type="submit" class="btn btn-primary btn-sm">
@@ -79,22 +84,27 @@
             <td data-sort="{{ row.oper|default:'' }}">{{ row.oper|lens_status_icon:"oper" }}</td>
             {# unknown age sorts lowest, "no MAC ever" highest #}
             <td data-sort="{% if not row.age_basis %}-1{% elif row.age_days is None %}999999{% else %}{{ row.age_days }}{% endif %}" class="text-nowrap">
-              {% if row.age_basis == "mac" %}
-                {% if row.age_days is None %}
+              {% if row.age_basis == "mac" and row.age_days is None %}
                 <span class="text-muted" title="{% trans 'No MAC ever seen on this port (or expired from Netdisco).' %}">{% trans "no MAC known" %}</span>
-                {% else %}
-                <span title="{{ row.last_mac_seen|lens_absolute }}{% if row.last_mac %} · {{ row.last_mac }}{% endif %}">{{ row.age_days }} d</span>
-                {% endif %}
-              {% elif row.age_basis == "lastchange" %}
-                <span title="{% blocktrans with ts=row.lastchange_stamp|lens_absolute %}No MAC known on this port. Link down since {{ ts }} (ifLastChange, may be inaccurate).{% endblocktrans %}">{{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
               {% elif row.age_basis == "boot" %}
-                <span title="{% blocktrans with ts=row.device_boot|lens_absolute %}No MAC known on this port. Link unchanged since the reboot on {{ ts }}, so down at least that long.{% endblocktrans %}">≥ {{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
+                <span title="{% trans 'Link unchanged since the reboot, so unused at least that long.' %}">≥ {{ row.age_days }} d</span>
+              {% elif row.age_basis %}
+                {{ row.age_days }} d
               {% else %}
                 <span class="text-muted fst-italic" title="{% trans 'No MAC known on this port and no usable link change, so it is unknown whether it is in use.' %}">{% trans "unknown" %}</span>
               {% endif %}
+            </td>
+            <td data-sort="{{ row.free_since|default:'' }}" class="text-nowrap">
+              {% if row.free_since %}<span title="{{ row.free_since|lens_ago }}">{{ row.free_since|lens_datetime }}</span>{% else %}—{% endif %}
+            </td>
+            <td class="text-nowrap">
+              {% for src in row.sources %}
+              <i class="mdi {{ src.icon }} {% if src.used %}text-primary{% elif src.ts %}text-secondary{% else %}text-muted opacity-25{% endif %}"
+                 title="{{ src.label }}: {% if src.ts %}{{ src.ts|lens_absolute }} ({{ src.ts|lens_ago }}){% if src.extra %} · {{ src.extra }}{% endif %}{% if src.used %} · {% trans 'used for days unused' %}{% endif %}{% else %}{% trans 'not known' %}{% endif %}"></i>
+              {% endfor %}
               {% if row.age_clock %}
-              <i class="mdi mdi-clock-outline {{ row.age_clock|lens_stale_class }}" aria-hidden="true"
-                 title="{% if row.age_basis == "mac" %}{% blocktrans with ago=row.age_clock|lens_ago %}MAC table polled {{ ago }}{% endblocktrans %}{% else %}{% blocktrans with ago=row.age_clock|lens_ago %}Last discovered {{ ago }}{% endblocktrans %}{% endif %}"></i>
+              <i class="mdi mdi-clock-outline ms-1 {{ row.age_clock|lens_stale_class }}" aria-hidden="true"
+                 title="{% if row.last_macsuck_seen %}{% blocktrans with ago=row.last_macsuck_seen|lens_ago %}MAC table polled {{ ago }}{% endblocktrans %}{% else %}{% trans 'MAC table never polled' %}{% endif %} · {% if row.last_discover %}{% blocktrans with ago=row.last_discover|lens_ago %}last discovered {{ ago }}{% endblocktrans %}{% else %}{% trans 'never discovered' %}{% endif %}"></i>
               {% endif %}
             </td>
             <td>
@@ -106,7 +116,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="10" class="text-muted">{% trans "No free ports found." %}</td></tr>
+          <tr><td colspan="12" class="text-muted">{% trans "No free ports found." %}</td></tr>
           {% endfor %}
         {% endif %}
       </tbody>
