@@ -8,14 +8,24 @@
 <div class="text-muted small mb-2">
   <i class="mdi mdi-information-outline" aria-hidden="true"></i>
   {% blocktrans trimmed %}
-  Access ports free for reuse: no MAC seen on the port for at least the given number of days, or never.
-  Uplinks (CDP/LLDP neighbor), LAGs and virtual ports are left out. Longest unused first.
-  Sources: last MAC <i class="mdi mdi-lan-connect" aria-hidden="true"></i>, link change
-  <i class="mdi mdi-link-variant" aria-hidden="true"></i> (less reliable) and reboot
-  <i class="mdi mdi-restart" aria-hidden="true"></i>; the highlighted one is what the days are based on.
-  The clock shows how fresh that data is.
-  With If oper. = Up it lists ports that are up but silent, e.g. a client failing NAC.
+  Access ports free for reuse, longest unused first. Uplinks (CDP/LLDP neighbor), LAGs and virtual ports are left out.
   {% endblocktrans %}
+  <ul class="mb-0 mt-1 ps-4">
+    <li><i class="mdi mdi-lan-connect" aria-hidden="true"></i>
+      {% trans "Last MAC: days since a MAC was last seen on the port. Used whenever the port ever had one." %}</li>
+    <li><i class="mdi mdi-link-variant" aria-hidden="true"></i>
+      {% trans "Link change: no MAC known, so the days count from the port's last link change (ifLastChange, less reliable)." %}</li>
+    <li><i class="mdi mdi-restart" aria-hidden="true"></i>
+      {% trans "Reboot: the link change is only the device's reboot, so the port is unused at least that long (≥)." %}</li>
+    <li><i class="mdi mdi-help-circle-outline" aria-hidden="true"></i>
+      {% trans "Unknown: no MAC and no usable link change." %}</li>
+  </ul>
+  <div class="mt-1">
+    {% blocktrans trimmed %}
+    In the Sources column the highlighted icon is the one the days are based on; the clock shows how fresh that data is.
+    With If oper. = Up the list shows ports that are up but silent, e.g. a client failing NAC.
+    {% endblocktrans %}
+  </div>
 </div>
 <form method="get">
   <div class="table-responsive">
