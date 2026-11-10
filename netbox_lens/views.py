@@ -12,7 +12,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
-from django.db.models import Q
+from django.db.models import F, Q
 from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -519,19 +519,33 @@ def _refresh_ip_excluded_roles():
     return list(settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("refresh_ip_exclude_roles") or ())
 
 
+# Virtual chassis members other than the master: the chassis' IP sits on the
+# master, and a member's name resolving to it would offer to move it away.
+VC_NON_MASTER = Q(virtual_chassis__isnull=False) & ~Q(virtual_chassis__master=F("pk"))
+
+
+def _is_vc_non_master(device):
+    vc = device.virtual_chassis
+    return vc is not None and vc.master_id != device.pk
+
+
 class LensRefreshIpView(PermissionRequiredMixin, View):
     """Preview (dry run) and apply of discobox's /refresh-ip for one device:
     sets primary_ip4 from DNS (else Netdisco), for devices that lack one."""
     permission_required = "netbox_lens.trigger_lens"
 
     def post(self, request, pk):
-        device = get_object_or_404(NbDevice.objects.select_related("role"), pk=pk)
+        device = get_object_or_404(NbDevice.objects.select_related("role", "virtual_chassis"), pk=pk)
         dry_run = request.POST.get("dry_run", "true") != "false"
         move = request.POST.get("move") == "true"
+        refusal = None
         if device.role and device.role.slug in _refresh_ip_excluded_roles():
+            refusal = f"Refresh IP is disabled for role {device.role.slug}."
+        elif _is_vc_non_master(device):
+            refusal = "This device is a virtual chassis member; the chassis IP belongs on its master."
+        if refusal:
             return render(request, "netbox_lens/refresh_ip_modal.html", {
-                "device": device, "dry_run": dry_run,
-                "error": f"Refresh IP is disabled for role {device.role.slug}.",
+                "device": device, "dry_run": dry_run, "error": refusal,
             })
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
         ok, data, error = refresh_ip(config, device.pk, dry_run=dry_run, move=move)
@@ -585,11 +599,12 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
     def get(self, request):
         params = _refresh_ips_filter(request)
         if not params:
-            # Default: the roles with a LENS panel, without primary IPv4.
-            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            # Default: active switches without primary IPv4. One role only: a
+            # role slug missing on this NetBox fails the whole filter.
             params = QueryDict(mutable=True)
             params["has_primary_ip"] = "false"
-            params.setlist("role", list(config.get("device_panel_roles", ())))
+            params["status"] = "active"
+            params["role"] = "switch"
             return redirect(f"{request.path}?{params.urlencode()}")
         context = {"filter_params": params, "filter_qs": params.urlencode(), "dry_run": True, "bulk_tab": "refresh_ips"}
         devices, error = _bulk_devices(request, params)
@@ -599,6 +614,8 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
         excluded = _refresh_ip_excluded_roles()
         qs = devices.exclude(role__slug__in=excluded)
         context["excluded_count"] = devices.filter(role__slug__in=excluded).count()
+        context["vc_member_count"] = qs.filter(VC_NON_MASTER).count()
+        qs = qs.exclude(VC_NON_MASTER)
         context["excluded_roles"] = excluded
         ids = list(qs.order_by("name").values_list("pk", flat=True)[:REFRESH_IPS_MAX + 1])
         context["matched"] = len(ids)
@@ -613,7 +630,8 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
         ids = [int(i) for i in request.POST.getlist("device") if i.isdigit()]
         # only devices this user may see, and never more than a preview could cover
         ids = list(NbDevice.objects.restrict(request.user, "view").filter(pk__in=ids[:REFRESH_IPS_MAX])
-                   .exclude(role__slug__in=_refresh_ip_excluded_roles()).values_list("pk", flat=True))
+                   .exclude(role__slug__in=_refresh_ip_excluded_roles()).exclude(VC_NON_MASTER)
+                   .values_list("pk", flat=True))
         context = {"filter_params": QueryDict(filter_qs), "filter_qs": filter_qs, "dry_run": False,
                    "matched": len(ids), "bulk_tab": "refresh_ips"}
         if not ids:
@@ -644,10 +662,10 @@ class LensBulkSyncView(PermissionRequiredMixin, View):
     def get(self, request):
         params = _refresh_ips_filter(request)
         if not params:
-            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
             params = QueryDict(mutable=True)
             params["has_primary_ip"] = "true"
-            params.setlist("role", list(config.get("device_panel_roles", ())))
+            params["status"] = "active"
+            params["role"] = "switch"
             return redirect(f"{request.path}?{params.urlencode()}")
         return render(request, "netbox_lens/bulk_sync.html", self._context(request, params))
 

@@ -31,6 +31,16 @@
   {% endblocktrans %}
 </div>
 {% endif %}
+{% if vc_member_count %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-cancel" aria-hidden="true"></i>
+  {% blocktrans trimmed count counter=vc_member_count %}
+  {{ counter }} device left out: virtual chassis member (the IP is on the master).
+  {% plural %}
+  {{ counter }} devices left out: virtual chassis member (the IP is on the master).
+  {% endblocktrans %}
+</div>
+{% endif %}
 {% if error %}
 <div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}</div>
 {% elif too_many %}
