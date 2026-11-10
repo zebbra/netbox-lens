@@ -150,3 +150,43 @@ def sync_device(config, device_ip, force=False):
         return True, data, None
     except requests.exceptions.RequestException as exc:
         return False, None, str(exc)
+
+
+def refresh_ip(config, device_id, dry_run=True):
+    """
+    Call discobox's /refresh-ip for one NetBox device: resolve its name (DNS,
+    else Netdisco) and set primary_ip4. Dry run is a GET; applying must be a
+    POST. Returns {"dry_run", "summary", "devices": [{"action": set|replace|
+    unchanged|error, "old", "new", "source", "resolved", "interface",
+    "address", "error", ...}]}.
+
+    Returns (ok, data, error). discobox's 4xx/5xx carry a JSON reason, which
+    is passed on as the error rather than the bare HTTP status.
+    """
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "Discobox URL is not configured."
+    headers = {"Accept": "application/json"}
+    token = config.get("token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    params = {"device": str(device_id), "dry_run": "true" if dry_run else "false"}
+    try:
+        resp = requests.request(
+            "GET" if dry_run else "POST",
+            f"{base_url}/refresh-ip",
+            headers=headers,
+            params=params,
+            timeout=config.get("timeout", DEFAULT_TIMEOUT),
+            verify=config.get("verify_ssl", True),
+        )
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+                reason = body.get("error") or body.get("detail") or body.get("reason")
+            except ValueError:
+                reason = None
+            return False, None, reason or f"HTTP {resp.status_code} from discobox"
+        return True, resp.json() if resp.content else {}, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)

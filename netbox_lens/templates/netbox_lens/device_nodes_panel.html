@@ -15,6 +15,14 @@
         {% trans "Loading from Netdisco…" %}
       </div>
     </div>
+    {% else %}
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <span class="text-muted small">
+        <i class="mdi mdi-alert-outline text-warning" aria-hidden="true"></i>
+        {% trans "No primary IPv4, so no Netdisco data (stats, sync, discover)." %}
+      </span>
+      {% if lens_can_trigger %}{% include "netbox_lens/refresh_ip_button.html" %}{% endif %}
+    </div>
     {% endif %}
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:interface_search' %}?device={{ lens_device_name|urlencode }}">
@@ -38,6 +46,21 @@
 {# Everything that needs Netdisco loads after the page has rendered, so a slow or unreachable backend can't hold up the device page. #}
 {% if lens_device_ip %}
 <div hx-get="{% url 'plugins:netbox_lens:device_panel_data' pk=lens_device_pk %}" hx-trigger="load" hx-swap="outerHTML"></div>
+{% endif %}
+{% if lens_can_trigger %}
+<div class="modal fade" id="lens-refresh-ip-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{% trans "Refresh primary IPv4" %}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="lens-refresh-ip-body">
+        <div class="text-muted">{% trans "Loading preview…" %}</div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endif %}
 
 {% endif %}

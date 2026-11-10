@@ -24,7 +24,7 @@ from .arp_history import build_arp_history
 from .backends import get_backends
 from .backends.base import SearchResult
 from .discobox import health as discobox_health
-from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
+from .discobox import rebuild_inventory, refresh_ip, set_paused, stats as discobox_stats, sync_device
 from .down_ports import build_down_ports
 from .forms import BASIS_CHOICES, ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
@@ -479,6 +479,26 @@ class LensRebuildInventoryView(PermissionRequiredMixin, View):
             context.update({"ok": ok, "data": data, "error": error})
 
         return render(request, "netbox_lens/rebuild_modal.html", context)
+
+
+class LensRefreshIpView(PermissionRequiredMixin, View):
+    """Preview (dry run) and apply of discobox's /refresh-ip for one device:
+    sets primary_ip4 from DNS (else Netdisco), for devices that lack one."""
+    permission_required = "netbox_lens.trigger_lens"
+
+    def post(self, request, pk):
+        device = get_object_or_404(NbDevice, pk=pk)
+        dry_run = request.POST.get("dry_run", "true") != "false"
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
+        ok, data, error = refresh_ip(config, device.pk, dry_run=dry_run)
+        entry = next(iter((data or {}).get("devices") or []), None)
+        if ok and not entry:
+            ok, error = False, "Discobox returned no result for this device."
+        elif ok and entry.get("action") == "error":
+            ok, error = False, entry.get("error") or "Discobox could not refresh the IP."
+        return render(request, "netbox_lens/refresh_ip_modal.html", {
+            "device": device, "dry_run": dry_run, "error": None if ok else error, "entry": entry,
+        })
 
 
 def _run_rebuild_now(config, ip):

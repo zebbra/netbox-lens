@@ -1,0 +1,11 @@
+{% load i18n %}
+{# Opens #lens-refresh-ip-modal (device_nodes_panel.html) with a dry-run preview of discobox /refresh-ip. #}
+<button type="button" class="btn btn-sm btn-outline-primary py-0 px-{% if lens_refresh_ip_compact %}1{% else %}2{% endif %}" data-bs-toggle="modal"
+        data-bs-target="#lens-refresh-ip-modal"
+        hx-post="{% url 'plugins:netbox_lens:refresh_ip' pk=lens_device_pk %}"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+        hx-vals='{"dry_run": "true"}'
+        hx-target="#lens-refresh-ip-body" hx-swap="innerHTML"
+        title="{% trans 'Refresh primary IPv4 from DNS (else Netdisco) — preview first' %}">
+  <i class="mdi mdi-ip-network" aria-hidden="true"></i>{% if not lens_refresh_ip_compact %} {% trans "Refresh IP" %}{% endif %}
+</button>

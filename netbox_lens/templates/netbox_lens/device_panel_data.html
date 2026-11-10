@@ -63,6 +63,7 @@
               {% for label, url in lens_web_links %}
               <a href="{{ url }}" target="_blank" rel="noopener" title="{% trans "Open in" %} {{ label }}"><i class="mdi mdi-open-in-new" aria-hidden="true"></i></a>
               {% endfor %}
+              {% if lens_can_trigger %}{% include "netbox_lens/refresh_ip_button.html" with lens_refresh_ip_compact=True %}{% endif %}
             </td>
           </tr>
           {% for label, summary in lens_summaries %}

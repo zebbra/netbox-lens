@@ -1,0 +1,48 @@
+{% load i18n %}
+
+{% if error %}
+<div class="alert alert-danger mb-0">{{ error }}</div>
+{% else %}
+<div class="mb-3">
+  <strong>{% trans "Device" %}:</strong> {{ device.name }}<br>
+  <strong>{% trans "Mode" %}:</strong>
+  {% if dry_run %}
+  <span class="badge text-bg-warning">{% trans "Dry run — preview only, nothing changed" %}</span>
+  {% else %}
+  <span class="badge text-bg-success">{% trans "Applied" %}</span>
+  {% endif %}
+</div>
+{% if entry.action == "unchanged" %}
+<div class="alert alert-info mb-0">
+  {% blocktrans trimmed with ip=entry.new|default:entry.old %}Primary IPv4 is already {{ ip }}, nothing to do.{% endblocktrans %}
+</div>
+{% else %}
+<table class="table table-sm mb-3">
+  <tbody>
+    <tr><th>{% trans "Action" %}</th><td>{% if entry.action == "replace" %}<span class="badge text-bg-danger">{% trans "replace" %}</span>{% else %}<span class="badge text-bg-primary">{% trans "set" %}</span>{% endif %}</td></tr>
+    <tr><th>{% trans "Current primary IPv4" %}</th><td>{{ entry.old|default:"—" }}</td></tr>
+    <tr><th>{% trans "New primary IPv4" %}</th><td>{{ entry.address|default:entry.new }}{% if entry.address_created %} <span class="text-muted small">({% trans "new IP address" %})</span>{% endif %}</td></tr>
+    <tr><th>{% trans "Resolved via" %}</th><td>{% if entry.source == "dns" %}DNS{% else %}Netdisco{% endif %}{% if entry.resolved %} <span class="text-muted">({{ entry.resolved }})</span>{% endif %}</td></tr>
+    <tr><th>{% trans "Interface" %}</th><td>{{ entry.interface|default:"—" }}{% if entry.interface_created %} <span class="text-muted small">({% trans "created; the next sync moves the IP to the real port" %})</span>{% endif %}</td></tr>
+  </tbody>
+</table>
+{% if dry_run %}
+<form hx-post="{% url 'plugins:netbox_lens:refresh_ip' pk=device.pk %}"
+      hx-target="#lens-refresh-ip-body" hx-swap="innerHTML" hx-indicator="#lens-refresh-ip-spinner">
+  {% csrf_token %}
+  <input type="hidden" name="dry_run" value="false">
+  <button type="submit" class="btn {% if entry.action == 'replace' %}btn-danger{% else %}btn-primary{% endif %} btn-sm">
+    <i class="mdi mdi-ip-network" aria-hidden="true"></i>
+    {% if entry.action == "replace" %}{% trans "Replace primary IPv4" %}{% else %}{% trans "Set primary IPv4" %}{% endif %}
+  </button>
+</form>
+{% else %}
+<div class="text-success small">
+  <i class="mdi mdi-check-circle" aria-hidden="true"></i> {% trans "Done." %}
+  <a href="{{ device.get_absolute_url }}">{% trans "Reload the page" %}</a> {% trans "to load the Netdisco data." %}
+</div>
+{% endif %}
+{% endif %}
+{% endif %}
+
+<span id="lens-refresh-ip-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>

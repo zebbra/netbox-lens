@@ -20,6 +20,7 @@ urlpatterns = [
     path("arpnip/<int:pk>/", views.LensTriggerJobView.as_view(job_method="trigger_arpnip"), name="arpnip"),
     path("rebuild/<int:pk>/", views.LensRebuildInventoryView.as_view(), name="rebuild_inventory"),
     path("rebuild-now/<int:pk>/", views.LensRebuildNowView.as_view(), name="rebuild_now"),
+    path("refresh-ip/<int:pk>/", views.LensRefreshIpView.as_view(), name="refresh_ip"),
     path("sync/<int:pk>/", views.LensSyncView.as_view(), name="sync"),
     path("probe/<int:pk>/", views.LensProbeView.as_view(), name="probe"),
     path("update-modules/<int:pk>/", views.LensUpdateModulesView.as_view(), name="update_modules"),

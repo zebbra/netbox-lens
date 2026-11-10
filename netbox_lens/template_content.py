@@ -357,6 +357,7 @@ class DeviceLensPanel(PluginTemplateExtension):
             "lens_device_name": device.name,
             "lens_device_ip": _device_ip(device),
             "lens_device_pk": device.pk,
+            "lens_can_trigger": self.context["request"].user.has_perm("netbox_lens.trigger_lens"),
         })
 
 
