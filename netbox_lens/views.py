@@ -13,7 +13,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from netbox.views.generic import ObjectView
@@ -38,9 +38,11 @@ from .snmp_modulator import probe as snmp_modulator_probe
 try:
     from dcim.models import Device as NbDevice
     from dcim.models import Interface as NbInterface
+    from dcim.filtersets import DeviceFilterSet
 except ImportError:
     NbDevice = None
     NbInterface = None
+    DeviceFilterSet = None
 
 MAX_MACARP_ROWS = 500
 
@@ -499,6 +501,83 @@ class LensRefreshIpView(PermissionRequiredMixin, View):
         return render(request, "netbox_lens/refresh_ip_modal.html", {
             "device": device, "dry_run": dry_run, "error": None if ok else error, "entry": entry,
         })
+
+
+# Bulk Refresh IPs: discobox answers synchronously (a DNS lookup per device),
+# so cap how many devices one preview may cover.
+REFRESH_IPS_MAX = 500
+# Device list parameters that aren't filters.
+_NON_FILTER_PARAMS = {"page", "per_page", "sort", "ordering", "export", "return_url", "tab", "embedded"}
+
+
+def _refresh_ips_filter(request):
+    """The device filter from the query string, as NetBox's device list sends it."""
+    params = request.GET.copy()
+    for key in list(params):
+        if key in _NON_FILTER_PARAMS or not params.getlist(key) or not any(params.getlist(key)):
+            del params[key]
+    return params
+
+
+class LensRefreshIpsView(PermissionRequiredMixin, View):
+    """Bulk Refresh IPs: preview discobox /refresh-ip for every device matching
+    a NetBox device filter, then apply it to the devices ticked. LENS resolves
+    the filter itself and sends device ids, so preview and apply cover exactly
+    the same devices."""
+    permission_required = "netbox_lens.trigger_lens"
+
+    def get(self, request):
+        params = _refresh_ips_filter(request)
+        if not params:
+            # Default: the roles with a LENS panel, without primary IPv4.
+            config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            params = QueryDict(mutable=True)
+            params["has_primary_ip"] = "false"
+            params.setlist("role", list(config.get("device_panel_roles", ())))
+            return redirect(f"{request.path}?{params.urlencode()}")
+        context = {"filter_params": params, "filter_qs": params.urlencode(), "dry_run": True}
+        fs = DeviceFilterSet(params, queryset=NbDevice.objects.restrict(request.user, "view"))
+        # a filterset ignores unknown keys, which would widen the filter to the whole fleet
+        unknown = sorted(k for k in params if k not in fs.filters)
+        if unknown:
+            context["error"] = f"Unknown device filter: {', '.join(unknown)}"
+            return render(request, "netbox_lens/refresh_ips.html", context)
+        if not fs.is_valid():
+            context["error"] = "; ".join(f"{k}: {', '.join(v)}" for k, v in fs.errors.items())
+            return render(request, "netbox_lens/refresh_ips.html", context)
+        ids = list(fs.qs.order_by("name").values_list("pk", flat=True)[:REFRESH_IPS_MAX + 1])
+        context["matched"] = len(ids)
+        if len(ids) > REFRESH_IPS_MAX:
+            context["too_many"] = REFRESH_IPS_MAX
+        elif ids:
+            context.update(self._run(request, ids, dry_run=True))
+        return render(request, "netbox_lens/refresh_ips.html", context)
+
+    def post(self, request):
+        filter_qs = request.POST.get("filter_qs", "")
+        ids = [int(i) for i in request.POST.getlist("device") if i.isdigit()]
+        # only devices this user may see, and never more than a preview could cover
+        ids = list(NbDevice.objects.restrict(request.user, "view").filter(pk__in=ids[:REFRESH_IPS_MAX])
+                   .values_list("pk", flat=True))
+        context = {"filter_params": QueryDict(filter_qs), "filter_qs": filter_qs, "dry_run": False,
+                   "matched": len(ids)}
+        if not ids:
+            context["error"] = "No devices selected."
+        else:
+            context.update(self._run(request, ids, dry_run=False))
+        return render(request, "netbox_lens/refresh_ips.html", context)
+
+    def _run(self, request, ids, dry_run):
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
+        ok, data, error = refresh_ip(config, ids, dry_run=dry_run)
+        if not ok:
+            return {"error": error}
+        urls = {d.pk: d.get_absolute_url() for d in NbDevice.objects.filter(pk__in=ids).only("pk")}
+        entries = [dict(e, url=urls.get(e.get("id"))) for e in (data or {}).get("devices") or []]
+        # what changes first, errors next, unchanged last
+        order = {"set": 0, "replace": 1, "error": 2, "unchanged": 3}
+        entries.sort(key=lambda e: (order.get(e.get("action"), 9), e.get("device") or ""))
+        return {"entries": entries, "summary": (data or {}).get("summary") or {}}
 
 
 def _run_rebuild_now(config, ip):

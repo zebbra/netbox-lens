@@ -420,4 +420,17 @@ class InterfaceLensPanel(PluginTemplateExtension):
         })
 
 
-template_extensions = [DeviceLensPanel, InterfaceLensPanel]
+class DeviceListLensButtons(PluginTemplateExtension):
+    models = ["dcim.device"]
+
+    def list_buttons(self):
+        request = self.context["request"]
+        if not request.user.has_perm("netbox_lens.trigger_lens"):
+            return ""
+        # hand the list's current filter over to the bulk page
+        return self.render("netbox_lens/device_list_buttons.html", extra_context={
+            "lens_filter_qs": request.GET.urlencode(),
+        })
+
+
+template_extensions = [DeviceLensPanel, InterfaceLensPanel, DeviceListLensButtons]

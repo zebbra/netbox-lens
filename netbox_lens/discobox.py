@@ -152,9 +152,11 @@ def sync_device(config, device_ip, force=False):
         return False, None, str(exc)
 
 
-def refresh_ip(config, device_id, dry_run=True):
+def refresh_ip(config, device_ids, dry_run=True):
     """
-    Call discobox's /refresh-ip for one NetBox device: resolve its name (DNS,
+    Call discobox's /refresh-ip for NetBox devices (one id or a list of ids;
+    LENS resolves filters itself so preview and apply cover the same
+    devices): resolve each name (DNS,
     else Netdisco) and set primary_ip4. Dry run is a GET; applying must be a
     POST. Returns {"dry_run", "summary", "devices": [{"action": set|replace|
     unchanged|error, "old", "new", "source", "resolved", "interface",
@@ -170,7 +172,10 @@ def refresh_ip(config, device_id, dry_run=True):
     token = config.get("token", "")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    params = {"device": str(device_id), "dry_run": "true" if dry_run else "false"}
+    if isinstance(device_ids, (int, str)):
+        device_ids = [device_ids]
+    params = [("device", str(i)) for i in device_ids]
+    params.append(("dry_run", "true" if dry_run else "false"))
     try:
         resp = requests.request(
             "GET" if dry_run else "POST",

@@ -1,0 +1,128 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+
+{% block title %}LENS – {% trans "Refresh IPs" %}{% endblock %}
+
+{% block content %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-information-outline" aria-hidden="true"></i>
+  {% blocktrans trimmed %}
+  Sets the primary IPv4 of each device from DNS on its name, else from Netdisco (via discobox).
+  An IP not yet on one of the device's interfaces goes on an interface "main"; the next sync moves it to the real port.
+  {% endblocktrans %}
+</div>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <span class="text-muted small">{% trans "Filter" %}:</span>
+  {% for key, values in filter_params.lists %}
+    {% for v in values %}<span class="badge text-bg-secondary">{{ key }}={{ v }}</span>{% endfor %}
+  {% endfor %}
+  <a href="{% url 'dcim:device_list' %}?{{ filter_qs }}" class="btn btn-sm btn-outline-secondary py-0">
+    <i class="mdi mdi-filter-variant" aria-hidden="true"></i> {% trans "Edit in device list" %}
+  </a>
+  {% if not dry_run %}
+  <a href="?{{ filter_qs }}" class="btn btn-sm btn-outline-primary py-0">
+    <i class="mdi mdi-refresh" aria-hidden="true"></i> {% trans "Preview again" %}
+  </a>
+  {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}</div>
+{% elif too_many %}
+<div class="alert alert-warning">
+  {% blocktrans trimmed %}More than {{ too_many }} devices match. Narrow the filter (e.g. by site or role).{% endblocktrans %}
+</div>
+{% elif not matched %}
+<div class="text-muted">{% trans "No devices match this filter." %}</div>
+{% else %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  {% if dry_run %}
+  <span class="badge text-bg-warning">{% trans "Dry run — preview only, nothing changed" %}</span>
+  {% else %}
+  <span class="badge text-bg-success">{% trans "Applied" %}</span>
+  {% endif %}
+  <span class="small">
+    {% blocktrans trimmed count counter=summary.devices|default:0 %}{{ counter }} device{% plural %}{{ counter }} devices{% endblocktrans %}:
+    <span class="badge text-bg-primary">{{ summary.set|default:0 }} set</span>
+    <span class="badge text-bg-danger">{{ summary.replace|default:0 }} replace</span>
+    <span class="badge text-bg-secondary">{{ summary.unchanged|default:0 }} unchanged</span>
+    <span class="badge text-bg-dark">{{ summary.error|default:0 }} error</span>
+  </span>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="filter_qs" value="{{ filter_qs }}">
+  <div class="table-responsive">
+    <table class="table table-hover table-headings mb-2 lens-sortable">
+      <thead>
+        <tr>
+          <th style="width: 1%">{% if dry_run %}<input type="checkbox" class="form-check-input" id="lens-select-all" title="{% trans 'Select all set/replace' %}">{% endif %}</th>
+          <th data-sort-type="text">{% trans "Device" %}</th>
+          <th data-sort-type="text">{% trans "Action" %}</th>
+          <th data-sort-type="text">{% trans "Current primary IPv4" %}</th>
+          <th data-sort-type="text">{% trans "New primary IPv4" %}</th>
+          <th data-sort-type="text">{% trans "Resolved via" %}</th>
+          <th data-sort-type="text">{% trans "Interface" %}</th>
+          <th data-sort-type="text">{% trans "Note" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr{% if e.action == "unchanged" %} class="text-muted"{% endif %}>
+          <td>
+            {% if dry_run and e.action == "set" or dry_run and e.action == "replace" %}
+            <input type="checkbox" class="form-check-input lens-pick" name="device" value="{{ e.id }}"{% if e.action == "set" %} checked{% endif %}>
+            {% elif e.applied %}<i class="mdi mdi-check-circle text-success" title="{% trans 'Applied' %}"></i>{% endif %}
+          </td>
+          <td>{% if e.url %}<a href="{{ e.url }}">{{ e.device }}</a>{% else %}{{ e.device }}{% endif %}</td>
+          <td data-sort="{{ e.action }}">
+            {% if e.action == "set" %}<span class="badge text-bg-primary">set</span>
+            {% elif e.action == "replace" %}<span class="badge text-bg-danger">replace</span>
+            {% elif e.action == "error" %}<span class="badge text-bg-dark">error</span>
+            {% else %}<span class="badge text-bg-secondary">unchanged</span>{% endif %}
+          </td>
+          <td>{{ e.old|default:"—" }}</td>
+          <td>{% if e.action == "unchanged" %}—{% else %}{{ e.address|default:e.new|default:"—" }}{% endif %}</td>
+          <td>{% if e.source == "dns" %}DNS{% elif e.source == "netdisco" %}Netdisco{% else %}—{% endif %}{% if e.resolved %} <span class="text-muted small">{{ e.resolved }}</span>{% endif %}</td>
+          <td>{{ e.interface|default:"—" }}</td>
+          <td class="small">
+            {% if e.error %}<span class="text-danger">{{ e.error }}</span>{% endif %}
+            {% if e.interface_created %}{% trans "new interface" %}{% endif %}{% if e.interface_created and e.address_created %}, {% endif %}{% if e.address_created %}{% trans "new IP address" %}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if dry_run and summary.set|default:0|add:summary.replace|default:0 %}
+  <button type="submit" class="btn btn-primary btn-sm" id="lens-apply">
+    <i class="mdi mdi-ip-network" aria-hidden="true"></i> {% trans "Apply to selected" %} (<span id="lens-pick-count">0</span>)
+  </button>
+  <span class="text-muted small ms-2">{% trans "Replace is not preselected: it overwrites an existing primary IPv4." %}</span>
+  {% endif %}
+</form>
+{% endif %}
+
+<script>
+(function () {
+  var all = document.getElementById("lens-select-all");
+  var picks = document.querySelectorAll("input.lens-pick");
+  var count = document.getElementById("lens-pick-count");
+  var apply = document.getElementById("lens-apply");
+  function update() {
+    var n = Array.prototype.filter.call(picks, function (p) { return p.checked; }).length;
+    if (count) count.textContent = n;
+    if (apply) apply.disabled = n === 0;
+    if (all) { all.checked = n === picks.length && n > 0; all.indeterminate = n > 0 && n < picks.length; }
+  }
+  if (all) all.addEventListener("change", function () {
+    picks.forEach(function (p) { p.checked = all.checked; }); update();
+  });
+  picks.forEach(function (p) { p.addEventListener("change", update); });
+  update();
+})();
+</script>
+{% include "netbox_lens/sortable_table.html" %}
+{% endblock %}

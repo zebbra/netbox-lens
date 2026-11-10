@@ -51,6 +51,16 @@ menu = PluginMenu(
             ),
         ),
         (
+            _("Bulk"),
+            (
+                PluginMenuItem(
+                    link="plugins:netbox_lens:refresh_ips",
+                    link_text=_("Refresh IPs"),
+                    permissions=["netbox_lens.trigger_lens"],
+                ),
+            ),
+        ),
+        (
             _("Status"),
             (
                 PluginMenuItem(
