@@ -328,10 +328,20 @@ ADMIN_ANY_CHOICES = [
 ]
 
 
+# What a port's "days unused" is based on (portfree's free_since_basis).
+BASIS_CHOICES = [
+    ("mac", "MAC"),
+    ("lastchange", "Link"),
+    ("boot", "Boot"),
+    ("unknown", "Unknown"),
+]
+
+
 class DownPortsForm(forms.Form):
     """Filters for the Down Ports (free ports) page. Netdisco's portfree
     report does admin/oper/min_days; the text filters run on its result."""
     device = copy.deepcopy(InterfaceSearchForm.base_fields["device"])
+    device.widget.attrs["placeholder"] = "Name (partial) or IP / subnet"
     interface = copy.deepcopy(InterfaceSearchForm.base_fields["interface"])
     description = copy.deepcopy(InterfaceSearchForm.base_fields["description"])
     vlan = copy.deepcopy(InterfaceSearchForm.base_fields["vlan"])
@@ -358,8 +368,14 @@ class DownPortsForm(forms.Form):
         widget=forms.NumberInput(attrs={
             "class": "form-control form-control-sm",
             "style": "width: 6em",
-            "title": "Only ports with no MAC seen for at least this many days (or never).",
+            "title": "Only ports unused for at least this many days.",
         }),
+    )
+    basis = forms.MultipleChoiceField(
+        label="Based on",
+        choices=BASIS_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "form-check-input"}),
     )
 
     def clean(self):

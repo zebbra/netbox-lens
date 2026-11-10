@@ -10,8 +10,9 @@
   {% blocktrans trimmed %}
   Access ports free for reuse: no MAC seen on the port for at least the given number of days, or never.
   Uplinks (CDP/LLDP neighbor), LAGs and virtual ports are left out. Data from Netdisco's MAC tables;
-  the clock shows how old a device's last MAC poll (macsuck) is. On devices without MAC data the
-  age comes from the link change instead (<i class="mdi mdi-link-variant" aria-hidden="true"></i>, less reliable).
+  the clock shows how old a device's last MAC poll (macsuck) is. Ports without any known MAC
+  get their age from the link change instead (<i class="mdi mdi-link-variant" aria-hidden="true"></i>, less reliable).
+  Longest unused first.
   With If oper. = Up it lists ports that are up but silent, e.g. a client failing NAC.
   {% endblocktrans %}
 </div>
@@ -40,7 +41,15 @@
           <th></th>
           <th>{{ form.admin }}</th>
           <th>{{ form.oper }}</th>
-          <th><div class="d-flex align-items-center gap-1"><span class="small text-muted">≥</span>{{ form.min_days }}</div></th>
+          <th>
+            <div class="d-flex align-items-center gap-1"><span class="small text-muted">≥</span>{{ form.min_days }}</div>
+            <div class="lens-basis mt-1 small fw-normal text-nowrap"
+                 title="{% trans 'What the days are based on: last MAC, link change, reboot (lower bound) or unknown.' %}">
+              {% for cb in form.basis %}
+              <label class="d-flex align-items-center gap-1">{{ cb.tag }}{{ cb.choice_label }}</label>
+              {% endfor %}
+            </div>
+          </th>
           <th>
             <div class="d-flex gap-1">
               <button type="submit" class="btn btn-primary btn-sm">
@@ -77,11 +86,11 @@
                 <span title="{{ row.last_mac_seen|lens_absolute }}{% if row.last_mac %} · {{ row.last_mac }}{% endif %}">{{ row.age_days }} d</span>
                 {% endif %}
               {% elif row.age_basis == "lastchange" %}
-                <span title="{% blocktrans with ts=row.lastchange_stamp|lens_absolute %}No MAC data for this device. Link down since {{ ts }} (ifLastChange, may be inaccurate).{% endblocktrans %}">{{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
+                <span title="{% blocktrans with ts=row.lastchange_stamp|lens_absolute %}No MAC known on this port. Link down since {{ ts }} (ifLastChange, may be inaccurate).{% endblocktrans %}">{{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
               {% elif row.age_basis == "boot" %}
-                <span title="{% blocktrans with ts=row.device_boot|lens_absolute %}No MAC data for this device. Link unchanged since the reboot on {{ ts }}, so down at least that long.{% endblocktrans %}">≥ {{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
+                <span title="{% blocktrans with ts=row.device_boot|lens_absolute %}No MAC known on this port. Link unchanged since the reboot on {{ ts }}, so down at least that long.{% endblocktrans %}">≥ {{ row.age_days }} d <i class="mdi mdi-link-variant text-muted" aria-hidden="true"></i></span>
               {% else %}
-                <span class="text-muted fst-italic" title="{% trans 'No MAC data for this device and no usable link change, so it is unknown whether this port is in use.' %}">{% trans "unknown" %}</span>
+                <span class="text-muted fst-italic" title="{% trans 'No MAC known on this port and no usable link change, so it is unknown whether it is in use.' %}">{% trans "unknown" %}</span>
               {% endif %}
               {% if row.age_clock %}
               <i class="mdi mdi-clock-outline {{ row.age_clock|lens_stale_class }}" aria-hidden="true"
@@ -117,6 +126,13 @@
   <div class="alert alert-danger mt-2">
     <i class="mdi mdi-alert" aria-hidden="true"></i> {% trans "Netdisco free-ports report unavailable:" %} {{ error }}
   </div>
+  {% elif limited and rows %}
+  <div class="text-muted small mt-2">
+    <i class="mdi mdi-information-outline" aria-hidden="true"></i>
+    {% blocktrans trimmed with shown=rows|length %}
+    Showing the {{ shown }} longest-unused ports. Filter by element name (or IP / subnet), interface, description or VLAN for the complete list.
+    {% endblocktrans %}
+  </div>
   {% elif truncated %}
   <div class="alert alert-warning mt-2">
     {% blocktrans trimmed with shown=rows|length %}
@@ -125,5 +141,9 @@
   </div>
   {% endif %}
 {% endif %}
+<style>
+  .lens-basis { display: grid; grid-template-columns: auto auto; column-gap: .75em; text-transform: none; }
+  table .lens-basis input.form-check-input { width: 1em; height: 1em; min-width: 1em; margin: 0; padding: 0; background-size: .75em; }
+</style>
 {% include "netbox_lens/sortable_table.html" %}
 {% endblock %}

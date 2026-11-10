@@ -26,7 +26,7 @@ from .backends.base import SearchResult
 from .discobox import health as discobox_health
 from .discobox import rebuild_inventory, set_paused, stats as discobox_stats, sync_device
 from .down_ports import build_down_ports
-from .forms import ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
+from .forms import BASIS_CHOICES, ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
 from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context
 from .mac_history import build_mac_history
@@ -899,6 +899,9 @@ class LensDownPortsView(PermissionRequiredMixin, View):
         data.setdefault("min_days", "30")
         data.setdefault("admin", "any")
         data.setdefault("oper", "down")
+        # all bases by default; none ticked means no filter, as in the report
+        if not data.getlist("basis"):
+            data.setlist("basis", [value for value, _ in BASIS_CHOICES])
         form = DownPortsForm(data)
         context = {"form": form}
 
@@ -907,12 +910,13 @@ class LensDownPortsView(PermissionRequiredMixin, View):
             backend = next((b for b in get_backends(config) if hasattr(b, "free_ports")), None)
             cd = form.cleaned_data
             if backend is None:
-                rows, total, truncated, error = [], 0, False, "Netdisco backend not configured"
+                rows, total, truncated, limited, error = [], 0, False, False, "Netdisco backend not configured"
             else:
-                rows, total, truncated, error = build_down_ports(
+                rows, total, truncated, limited, error = build_down_ports(
                     backend,
                     min_days=cd["min_days"],
                     oper=cd["oper"],
+                    basis=cd.get("basis") or None,
                     admin=cd["admin"],
                     device_query=cd.get("device") or None,
                     interface_query=cd.get("interface") or None,
@@ -950,6 +954,7 @@ class LensDownPortsView(PermissionRequiredMixin, View):
                 "rows": rows,
                 "total": total,
                 "truncated": truncated,
+                "limited": limited,
                 "error": error,
                 "searched": True,
                 "min_days": cd["min_days"],

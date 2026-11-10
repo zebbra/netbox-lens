@@ -561,7 +561,8 @@ class NetdiscoBackend(LensBackend):
             return None
 
     def free_ports(self, age_num: int = 30, up: str = "down", up_admin: str = "any",
-                   device: str | None = None):
+                   device: str | None = None, limit: int | None = None,
+                   basis: list | None = None):
         """Fleet-wide "free ports" in one call: Netdisco's portfree report.
         A port qualifies when no MAC was seen on it for age_num days (or never);
         LAG/virtual ports and ports with a CDP/LLDP neighbor are left out.
@@ -573,6 +574,10 @@ class NetdiscoBackend(LensBackend):
         params = {"age_num": age_num, "age_unit": "days", "up": up, "up_admin": up_admin}
         if device:
             params["device"] = device
+        if limit:
+            params["limit"] = limit
+        if basis:
+            params["basis"] = ",".join(basis)
         try:
             resp = requests.get(
                 f"{base_url}/api/v1/report/port/portfree",
