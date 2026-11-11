@@ -28,6 +28,7 @@ urlpatterns = [
     path("update-modules/<int:pk>/", views.LensUpdateModulesView.as_view(), name="update_modules"),
     path("discobox/pause/", views.LensDiscoboxPauseView.as_view(), name="discobox_pause"),
     path("interface/<int:pk>/nodes-data/", views.LensInterfaceNodesDataView.as_view(), name="interface_nodes_data"),
+    path("interface/<int:pk>/port-data/", views.LensInterfacePortDataView.as_view(), name="interface_port_data"),
     path("device/<int:pk>/panel-data/", views.LensDevicePanelDataView.as_view(), name="device_panel_data"),
     path("device/<int:pk>/jobs-data/", views.LensDeviceJobsDataView.as_view(), name="device_jobs_data"),
     path("device/<int:pk>/macarp-data/", views.LensDeviceMacArpDataView.as_view(), name="device_macarp_data"),

@@ -1,0 +1,114 @@
+{% load i18n %}
+{% load lens_filters %}
+{% if not lens_info %}
+<div class="card-body text-muted small">
+  <i class="mdi mdi-alert-outline text-warning" aria-hidden="true"></i>
+  {% blocktrans trimmed with port=lens_port ip=lens_device_ip %}Netdisco has no port {{ port }} on {{ ip }} (or is unreachable).{% endblocktrans %}
+</div>
+{% else %}
+{% with i=lens_info %}
+<div class="card-body py-2 small">
+  {% if i.error_disable_cause %}
+  <div class="alert alert-danger py-1 px-2 mb-2">
+    <i class="mdi mdi-alert-octagon" aria-hidden="true"></i> {% trans "Err-disabled" %}: <strong>{{ i.error_disable_cause }}</strong>
+  </div>
+  {% endif %}
+  <div class="row g-3">
+    <div class="col-sm-6">
+      <div class="fw-semibold mb-1"><i class="mdi mdi-ethernet" aria-hidden="true"></i> {% trans "State" %}</div>
+      <dl class="lens-kv">
+        <dt>{% trans "Admin / Oper" %}</dt><dd>{{ i.up_admin|lens_status_icon:"admin" }} {{ i.up|lens_status_icon:"oper" }}</dd>
+        <dt>{% trans "Speed" %}</dt><dd>{{ i.speed|default:"—" }}{% if i.speed_admin and i.speed_admin != i.speed %} <span class="text-muted">({% trans "set" %} {{ i.speed_admin }})</span>{% endif %}</dd>
+        <dt>{% trans "Duplex" %}</dt><dd>{{ i.duplex|default:"—" }}{% if i.duplex_admin and i.duplex_admin != i.duplex %} <span class="text-muted">({% trans "set" %} {{ i.duplex_admin }})</span>{% endif %}</dd>
+        <dt>{% trans "VLAN" %}</dt><dd>{{ i.vlan|default:"—" }}{% if i.pvid and i.pvid|stringformat:"s" != i.vlan|stringformat:"s" %} <span class="text-muted">(PVID {{ i.pvid }})</span>{% endif %}</dd>
+        <dt>MTU</dt><dd>{{ i.mtu|default:"—" }}</dd>
+        {% if i.stp %}<dt>STP</dt><dd>{{ i.stp }}</dd>{% endif %}
+        {% if i.slave_of %}<dt>{% trans "LAG member of" %}</dt><dd>{{ i.slave_of }}</dd>{% elif i.is_master %}<dt>LAG</dt><dd>{% trans "aggregate" %}</dd>{% endif %}
+        {% if i.is_uplink %}<dt>{% trans "Uplink" %}</dt><dd>{% trans "yes" %}</dd>{% endif %}
+        <dt>{% trans "Type" %}</dt><dd>{{ i.type|default:"—" }}</dd>
+        {% if i.mac %}<dt>{% trans "Port MAC" %}</dt><dd><code class="lens-copy" data-value="{{ i.mac }}">{{ i.mac }}</code></dd>{% endif %}
+        {% if i.ifindex %}<dt>ifIndex</dt><dd>{{ i.ifindex }}</dd>{% endif %}
+      </dl>
+    </div>
+
+    <div class="col-sm-6">
+      <div class="fw-semibold mb-1"><i class="mdi mdi-history" aria-hidden="true"></i> {% trans "Usage" %}</div>
+      <dl class="lens-kv">
+        <dt>{% trans "Last MAC" %}</dt>
+        <dd>
+          {% if i.last_mac %}
+          <code class="lens-copy" data-value="{{ i.last_mac }}">{{ i.last_mac }}</code>
+          {% if i.last_mac_active %}<span class="badge text-bg-success">{% trans "active" %}</span>{% endif %}
+          <br><span title="{{ i.last_mac_seen|lens_absolute }}">{{ i.last_mac_seen|lens_datetime }}</span> <span class="text-muted">({{ i.last_mac_seen|lens_ago }})</span>
+          {% else %}<span class="text-muted">{% trans "no MAC known" %}</span>{% endif %}
+        </dd>
+        <dt>{% if i.up == "up" %}{% trans "Up since" %}{% else %}{% trans "Link change" %}{% endif %}</dt>
+        <dd>
+          {% if i.link_change_basis == "boot" %}
+          <span title="{% trans 'The link has not changed since the reboot.' %}">≥ {% trans "reboot" %} {{ i.device_boot|lens_datetime }}</span>
+          {% elif i.link_change %}
+          <span title="{{ i.link_change|lens_absolute }}">{{ i.link_change|lens_datetime }}</span> <span class="text-muted">({{ i.link_change|lens_ago }})</span>
+          {% else %}<span class="text-muted" title="{% trans 'No ifLastChange, or the counter wrapped.' %}">{% trans "unknown" %}</span>{% endif %}
+        </dd>
+        {% if i.device_boot and i.link_change_basis != "boot" %}<dt>{% trans "Device boot" %}</dt><dd>{{ i.device_boot|lens_datetime }}</dd>{% endif %}
+        <dt>{% trans "MAC table polled" %}</dt><dd><span class="{{ i.last_macsuck|lens_stale_class }}" title="{{ i.last_macsuck|lens_absolute }}">{{ i.last_macsuck|lens_ago|default:"—" }}</span></dd>
+        <dt>{% trans "Discovered" %}</dt><dd><span class="{{ i.last_discover|lens_stale_class }}" title="{{ i.last_discover|lens_absolute }}">{{ i.last_discover|lens_ago|default:"—" }}</span></dd>
+        {% if i.first_seen %}<dt>{% trans "Port known since" %}</dt><dd>{{ i.first_seen|lens_date }}</dd>{% endif %}
+      </dl>
+    </div>
+
+    <div class="col-12">
+      <div class="fw-semibold mb-1"><i class="mdi mdi-lan" aria-hidden="true"></i> {% trans "Neighbor" %}</div>
+      {% if i.neighbor %}
+      {% with n=i.neighbor %}
+      <dl class="lens-kv">
+        <dt>{% trans "Device" %}</dt>
+        <dd>
+          {% if n.nb_device_url %}<a href="{{ n.nb_device_url }}">{{ n.nb_device }}</a>{% else %}{{ n.dns|default:n.id|default:n.ip }}{% endif %}
+          {% if n.is_wap %}<span class="badge text-bg-info">AP</span>{% endif %}{% if n.is_phone %}<span class="badge text-bg-info">{% trans "Phone" %}</span>{% endif %}
+          {% if n.manual %}<span class="badge text-bg-secondary" title="{% trans 'Manually set topology' %}">{% trans "manual" %}</span>{% endif %}
+        </dd>
+        {% if n.port %}<dt>{% trans "Port" %}</dt><dd>{% if n.nb_port_url %}<a href="{{ n.nb_port_url }}">{{ n.port }}</a>{% else %}{{ n.port }}{% endif %}</dd>{% endif %}
+        {% if n.ip %}<dt>IP</dt><dd><code class="lens-copy" data-value="{{ n.ip }}">{{ n.ip }}</code></dd>{% endif %}
+        {% if n.vendor or n.model %}<dt>{% trans "Model" %}</dt><dd>{{ n.vendor|default:"" }} {{ n.model|default:"" }}</dd>{% endif %}
+        {% if n.os_ver %}<dt>OS</dt><dd>{{ n.os_ver }}</dd>{% endif %}
+        {% if n.type %}<dt>{% trans "Platform" %}</dt><dd class="text-truncate" style="max-width: 18rem" title="{{ n.type }}">{{ n.type }}</dd>{% endif %}
+      </dl>
+      {% endwith %}
+      {% else %}
+      <div class="text-muted">{% trans "No CDP/LLDP neighbor." %}</div>
+      {% endif %}
+
+      {% if i.poe %}
+      <div class="fw-semibold mt-2 mb-1"><i class="mdi mdi-flash" aria-hidden="true"></i> PoE</div>
+      <dl class="lens-kv">
+        <dt>{% trans "Status" %}</dt><dd>{{ i.poe.status|default:"—" }}{% if i.poe.admin and i.poe.admin != "true" %} <span class="text-muted">({{ i.poe.admin }})</span>{% endif %}</dd>
+        {% if i.poe.class %}<dt>{% trans "Class" %}</dt><dd>{{ i.poe.class }}</dd>{% endif %}
+        {% if i.poe.watts is not None %}<dt>{% trans "Power" %}</dt><dd>{{ i.poe.watts }} W</dd>{% endif %}
+      </dl>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if i.nac %}
+  <div class="d-flex flex-wrap align-items-center gap-3 border-top pt-2 mt-2">
+    <span class="fw-semibold"><i class="mdi mdi-shield-account" aria-hidden="true"></i> {% trans "NAC" %}</span>
+    <span>{% trans "State" %}: <strong>{{ i.nac.authconfig_state|default:"—" }}</strong></span>
+    <span>{% trans "Port Control" %}: {{ i.nac.port_control|default:"—" }}</span>
+    <span>{% trans "Port Status" %}: {{ i.nac.port_status|default:"—" }}</span>
+    <span>{% trans "User" %}: {% if i.nac.user %}<code class="lens-copy" data-value="{{ i.nac.user }}">{{ i.nac.user }}</code>{% else %}—{% endif %}</span>
+    <span>MAB: {% if i.nac.mab is None %}—{% elif i.nac.mab %}{% trans "yes" %}{% else %}{% trans "no" %}{% endif %}</span>
+    <a class="ms-auto" href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ lens_device_name|urlencode }}&interface={{ lens_port|urlencode }}" title="{% trans 'Open NAC Status' %}">
+      <i class="mdi mdi-open-in-new" aria-hidden="true"></i>
+    </a>
+  </div>
+  {% endif %}
+
+  {% if i.web_url %}
+  <div class="text-end mt-1">
+    <a href="{{ i.web_url }}" target="_blank" rel="noopener" class="small"><i class="mdi mdi-open-in-new" aria-hidden="true"></i> Netdisco</a>
+  </div>
+  {% endif %}
+</div>
+{% endwith %}
+{% endif %}

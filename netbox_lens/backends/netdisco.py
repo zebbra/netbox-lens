@@ -2,7 +2,7 @@ import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import requests
 
@@ -69,6 +69,35 @@ def _apply_ssid(sightings, wireless_rows):
         if w:
             s["ssid"] = w.get("ssid")
             s["sigstrength"] = w.get("sigstrength")
+
+
+def _ts(value):
+    """Netdisco timestamp text ("2026-11-10 12:00:00.123") -> naive datetime."""
+    try:
+        return datetime.fromisoformat(str(value).replace(" ", "T"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _link_change(lastchange, uptime, last_discover):
+    """(link change, basis, boot) as ISO text, like Netdisco's reports:
+    lastchange and uptime are sysUpTime ticks (1/100 s) as of last_discover.
+    basis "boot" when the change is within 10 minutes of the reboot (it only
+    says "at least since boot"); None when it can't be told (no data, or
+    the counter wrapped: lastchange past the uptime)."""
+    discovered = _ts(last_discover)
+    if discovered is None or uptime in (None, "") or lastchange in (None, ""):
+        return None, None, None
+    try:
+        uptime, lastchange = int(uptime), int(lastchange)
+    except (TypeError, ValueError):
+        return None, None, None
+    boot = discovered - timedelta(seconds=uptime / 100)
+    if lastchange > uptime or lastchange < 0:
+        return None, None, boot.isoformat(sep=" ", timespec="seconds")
+    change = discovered - timedelta(seconds=(uptime - lastchange) / 100)
+    basis = "boot" if change <= boot + timedelta(minutes=10) else "lastchange"
+    return change.isoformat(sep=" ", timespec="seconds"), basis, boot.isoformat(sep=" ", timespec="seconds")
 
 
 def parse_snmp_timeout_us(value: str | None) -> int | None:
@@ -650,6 +679,120 @@ class NetdiscoBackend(LensBackend):
             }
         except Exception:
             return {}
+
+    def _get_json(self, path: str):
+        """GET an API path; (data, status). data is None on any failure."""
+        base_url = self.config.get("url", "").rstrip("/")
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/{path}",
+                headers={"Authorization": f"Bearer {self._viewer_token()}", "Accept": "application/json"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+        except Exception:
+            return None, None
+        if not resp.ok:
+            return None, resp.status_code
+        try:
+            return (resp.json() if resp.content else None), resp.status_code
+        except ValueError:
+            return None, resp.status_code
+
+    def port_info(self, device_ip: str, port: str) -> dict | None:
+        """One port as Netdisco has it, for the interface page: the
+        device_port row, its properties (neighbor details, NAC, err-disable),
+        PoE, the last MAC ever seen on it (newest of its nodes, archived too), and the device's poll times —
+        five calls in parallel. None if the port itself can't be fetched.
+
+        The link change is derived the way Netdisco's own reports do it:
+        last_discover - (uptime - lastchange)/100 s. Within 10 minutes of
+        the reboot it only means "since boot" (link_change_basis "boot")."""
+        if not self.config.get("url"):
+            return None
+        dev = f"object/device/{device_ip}"
+        paths = {
+            "port": f"{dev}/port/{port}",
+            "properties": f"{dev}/port/{port}/properties",
+            "power": f"{dev}/port/{port}/power",
+            # not .../last_node: Netdisco can't serialize that one (500)
+            "nodes": f"{dev}/port/{port}/nodes",
+            "device": dev,
+        }
+        with ThreadPoolExecutor(max_workers=len(paths)) as executor:
+            results = dict(zip(paths, executor.map(lambda p: self._get_json(p)[0], paths.values())))
+        row = results["port"]
+        if not isinstance(row, dict):
+            return None
+        props = results["properties"] if isinstance(results["properties"], dict) else {}
+        power = results["power"] if isinstance(results["power"], dict) else {}
+        nodes = [n for n in results["nodes"] if isinstance(n, dict)] if isinstance(results["nodes"], list) else []
+        node = max(nodes, key=lambda n: n.get("time_last") or "", default={})
+        device = results["device"] if isinstance(results["device"], dict) else {}
+
+        link_change, basis, boot = _link_change(row.get("lastchange"), device.get("uptime"), device.get("last_discover"))
+        return {
+            "port": row.get("port"),
+            "descr": row.get("name"),
+            "up": row.get("up"),
+            "up_admin": row.get("up_admin"),
+            "speed": row.get("speed"),
+            "speed_admin": row.get("speed_admin"),
+            "duplex": row.get("duplex"),
+            "duplex_admin": row.get("duplex_admin"),
+            "mtu": row.get("mtu"),
+            "type": row.get("type"),
+            "mac": row.get("mac"),
+            "vlan": row.get("vlan"),
+            "pvid": row.get("pvid"),
+            "stp": row.get("stp"),
+            "is_uplink": row.get("is_uplink"),
+            "is_master": row.get("is_master"),
+            "slave_of": row.get("slave_of"),
+            "first_seen": row.get("creation"),
+            "link_change": link_change,
+            "link_change_basis": basis,
+            "device_boot": boot,
+            "neighbor": {
+                "ip": row.get("remote_ip"),
+                "port": row.get("remote_port"),
+                "type": row.get("remote_type"),
+                "id": row.get("remote_id"),
+                "dns": props.get("remote_dns"),
+                "vendor": props.get("remote_vendor"),
+                "model": props.get("remote_model"),
+                "os_ver": props.get("remote_os_ver"),
+                "serial": props.get("remote_serial"),
+                "is_wap": props.get("remote_is_wap"),
+                "is_phone": props.get("remote_is_phone"),
+                "manual": row.get("manual_topo"),
+            } if row.get("remote_ip") or row.get("remote_id") else None,
+            "error_disable_cause": props.get("error_disable_cause"),
+            "ifindex": props.get("ifindex"),
+            "faststart": props.get("faststart"),
+            "nac": {
+                "authconfig_state": props.get("pae_authconfig_state"),
+                "port_control": props.get("pae_authconfig_port_control"),
+                "port_status": props.get("pae_authconfig_port_status"),
+                "user": props.get("pae_authsess_user"),
+                "mab": props.get("pae_authsess_mab"),
+            } if props.get("pae_authconfig_state") or props.get("pae_authconfig_port_control") else None,
+            "poe": {
+                "admin": power.get("admin"),
+                "status": power.get("status"),
+                "class": power.get("class"),
+                # milliwatts, as the PoE MIBs report it
+                "watts": round(power["power"] / 1000, 1) if isinstance(power.get("power"), (int, float)) else None,
+            } if power else None,
+            "last_mac": node.get("mac"),
+            "last_mac_seen": node.get("time_last"),
+            "last_mac_first": node.get("time_first"),
+            "last_mac_active": node.get("active"),
+            "last_mac_vlan": node.get("vlan"),
+            "last_discover": device.get("last_discover"),
+            "last_macsuck": device.get("last_macsuck"),
+            "web_url": self.device_web_url(device_ip),
+        }
 
     def device_summary(self, device_ip: str) -> dict:
         base_url = self.config.get("url", "").rstrip("/")

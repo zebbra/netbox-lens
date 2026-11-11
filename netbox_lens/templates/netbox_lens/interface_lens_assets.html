@@ -1,0 +1,33 @@
+{# Shared by the interface page's two LENS cards: copy-on-click and the key/value layout. #}
+<style>
+  code.lens-copy { cursor: pointer; border-radius: 3px; }
+  #lens-iface-port:empty, #lens-iface-macs:empty { display: none; }
+  .lens-kv { display: grid; grid-template-columns: max-content 1fr; column-gap: 1rem; row-gap: .15rem; margin: 0; }
+  .lens-kv dt { font-weight: 500; color: var(--tblr-secondary, #6c757d); }
+  .lens-kv dd { margin: 0; }
+</style>
+<script>
+(function () {
+  if (window._lenscopying) return;
+  window._lenscopying = true;
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('code.lens-copy');
+    if (!el) return;
+    var val = el.dataset.value || el.textContent.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).catch(function () {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = val; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    el.style.outline = '2px solid #2bd9a8';
+    el.style.transition = 'outline-color .4s';
+    setTimeout(function () {
+      el.style.outlineColor = 'transparent';
+      setTimeout(function () { el.style.outline = ''; el.style.transition = ''; }, 450);
+    }, 600);
+  });
+}());
+</script>

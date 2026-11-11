@@ -15,6 +15,8 @@ from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.db.models import F, Q
 from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.utils.translation import gettext as _
 from django.views import View
 from netbox.views.generic import ObjectView
 from utilities.htmx import htmx_partial
@@ -28,7 +30,7 @@ from .discobox import rebuild_inventory, refresh_ip, set_paused, sync_all, stats
 from .down_ports import build_down_ports
 from .forms import BASIS_CHOICES, ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
-from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context
+from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context, interface_port_context
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
@@ -577,6 +579,52 @@ def _refresh_ips_filter(request):
     return params
 
 
+# Netdisco Sync preset: devices whose last sync is older than this.
+SYNC_STALE_DAYS = 30
+
+
+def _existing_roles(slugs):
+    """The slugs that exist as device roles here — a filter on a missing role
+    slug fails as a whole, so presets only use the ones that exist."""
+    from dcim.models import DeviceRole
+    found = set(DeviceRole.objects.filter(slug__in=slugs).values_list("slug", flat=True))
+    return [s for s in slugs if s in found]
+
+
+def _bulk_presets(tab, current_qs):
+    """Preset filters for a bulk tab as [{label, qs, active}]. Built per
+    request, so a relative date ("older than 30 days") is always from today."""
+    def qs(*pairs):
+        q = QueryDict(mutable=True)
+        for k, v in pairs:
+            q.appendlist(k, v)
+        return q.urlencode()
+
+    presets = []
+    if tab == "refresh_ips":
+        base = (("has_primary_ip", "false"), ("status", "active"))
+        presets.append((_("All without IP"), qs(*base)))
+        infra = [r for r in settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("device_panel_roles") or []
+                 if r not in _refresh_ip_excluded_roles()]
+        from dcim.models import DeviceRole
+        names = dict(DeviceRole.objects.filter(slug__in=infra).values_list("slug", "name"))
+        for role in infra:
+            if role in names:
+                presets.append((names[role], qs(*base, ("role", role))))
+    else:
+        base = (("has_primary_ip", "true"), ("status", "active"))
+        skip = tuple(("role__n", r) for r in _existing_roles(_refresh_ip_excluded_roles()))
+        stale = (timezone.localdate() - timedelta(days=SYNC_STALE_DAYS)).isoformat()
+        presets += [
+            (_("Switches"), qs(*base, ("role", "switch"))) if _existing_roles(["switch"]) else None,
+            (_("Not synced for %(days)d days") % {"days": SYNC_STALE_DAYS},
+             # __lt alone also matches devices never synced: those have their own preset
+             qs(*base, *skip, ("cf_netdisco_last_update__empty", "false"), ("cf_netdisco_last_update__lt", stale))),
+            (_("Never synced"), qs(*base, *skip, ("cf_netdisco_last_update__empty", "true"))),
+        ]
+    return [{"label": label, "qs": q, "active": q == current_qs} for label, q in filter(None, presets)]
+
+
 def _bulk_devices(request, params):
     """(queryset, error) for a NetBox device filter, limited to what the user may view."""
     fs = DeviceFilterSet(params, queryset=NbDevice.objects.restrict(request.user, "view"))
@@ -606,7 +654,8 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
             params["status"] = "active"
             params["role"] = "switch"
             return redirect(f"{request.path}?{params.urlencode()}")
-        context = {"filter_params": params, "filter_qs": params.urlencode(), "dry_run": True, "bulk_tab": "refresh_ips"}
+        context = {"filter_params": params, "filter_qs": params.urlencode(), "dry_run": True, "bulk_tab": "refresh_ips",
+                   "presets": _bulk_presets("refresh_ips", params.urlencode())}
         devices, error = _bulk_devices(request, params)
         if error:
             context["error"] = error
@@ -633,7 +682,8 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
                    .exclude(role__slug__in=_refresh_ip_excluded_roles()).exclude(VC_NON_MASTER)
                    .values_list("pk", flat=True))
         context = {"filter_params": QueryDict(filter_qs), "filter_qs": filter_qs, "dry_run": False,
-                   "matched": len(ids), "bulk_tab": "refresh_ips"}
+                   "matched": len(ids), "bulk_tab": "refresh_ips",
+                   "presets": _bulk_presets("refresh_ips", filter_qs)}
         if not ids:
             context["error"] = "No devices selected."
         else:
@@ -671,7 +721,7 @@ class LensBulkSyncView(PermissionRequiredMixin, View):
 
     def _context(self, request, params):
         context = {"filter_params": params, "filter_qs": params.urlencode(), "bulk_tab": "sync",
-                   "can_force": request.user.is_superuser}
+                   "can_force": request.user.is_superuser, "presets": _bulk_presets("sync", params.urlencode())}
         devices, error = _bulk_devices(request, params)
         if error:
             context["error"] = error
@@ -1160,7 +1210,6 @@ class LensDownPortsView(PermissionRequiredMixin, View):
                         ("Description (ifAlias)", lambda r: r.get("description")),
                         ("VLAN", lambda r: r.get("vlan")),
                         ("Speed", lambda r: r.get("speed")),
-                        ("Managed", lambda r: r.get("managed")),
                         ("If admin.", lambda r: r.get("admin")),
                         ("If oper.", lambda r: r.get("oper")),
                         ("Days unused", lambda r: r.get("age_days")),
@@ -1344,6 +1393,15 @@ class LensInterfaceNodesDataView(PermissionRequiredMixin, View):
     def get(self, request, pk):
         iface = get_object_or_404(NbInterface.objects.select_related("device__primary_ip4"), pk=pk)
         return render(request, "netbox_lens/interface_nodes_data.html", interface_nodes_context(iface))
+
+
+class LensInterfacePortDataView(PermissionRequiredMixin, View):
+    """htmx partial for the interface page's LENS panel (Netdisco port info)."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request, pk):
+        iface = get_object_or_404(NbInterface.objects.select_related("device__primary_ip4"), pk=pk)
+        return render(request, "netbox_lens/interface_port_data.html", interface_port_context(iface))
 
 
 def _port_sort_key(port):

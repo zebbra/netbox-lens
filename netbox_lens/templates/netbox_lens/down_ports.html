@@ -37,7 +37,6 @@
           <th data-sort-type="text">{% trans "Description (ifAlias)" %}</th>
           <th data-sort-type="num">{% trans "VLAN" %}</th>
           <th data-sort-type="text">{% trans "Speed" %}</th>
-          <th data-sort-type="text">{% trans "Managed" %}</th>
           <th data-sort-type="text">{% trans "If admin." %}</th>
           <th data-sort-type="text">{% trans "If oper." %}</th>
           <th data-sort-type="num">{% trans "Days unused" %}</th>
@@ -50,7 +49,6 @@
           <th>{{ form.interface }}</th>
           <th>{{ form.description }}</th>
           <th>{{ form.vlan }}</th>
-          <th></th>
           <th></th>
           <th>{{ form.admin }}</th>
           <th>{{ form.oper }}</th>
@@ -90,7 +88,6 @@
             <td>{{ row.description|default:"—" }}</td>
             <td data-sort="{{ row.vlan|default:'' }}">{{ row.vlan|default:"—" }}</td>
             <td>{{ row.speed|default:"—" }}</td>
-            <td>{{ row.managed|default:"—" }}</td>
             <td data-sort="{{ row.admin|default:'' }}">{{ row.admin|lens_status_icon:"admin" }}</td>
             <td data-sort="{{ row.oper|default:'' }}">{{ row.oper|lens_status_icon:"oper" }}</td>
             {# unknown age sorts lowest, "no MAC ever" highest #}
@@ -127,7 +124,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="12" class="text-muted">{% trans "No free ports found." %}</td></tr>
+          <tr><td colspan="11" class="text-muted">{% trans "No free ports found." %}</td></tr>
           {% endfor %}
         {% endif %}
       </tbody>

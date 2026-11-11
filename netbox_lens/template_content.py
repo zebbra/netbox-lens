@@ -361,21 +361,33 @@ class DeviceLensPanel(PluginTemplateExtension):
         })
 
 
+def interface_port_context(iface):
+    """Netdisco's view of one port (state, link change, last MAC, neighbor,
+    PoE, NAC) — the interface panel's "Port info", loaded on request."""
+    ip = _device_ip(iface.device)
+    backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
+    info = backends[0].port_info(ip, iface.name) if backends else None
+    neighbor = (info or {}).get("neighbor")
+    if neighbor and neighbor.get("ip") and NbDevice is not None:
+        # the neighbor as a NetBox device (and port), where it is one
+        device = NbDevice.objects.filter(primary_ip4__address__net_host=neighbor["ip"]).first()
+        if device:
+            neighbor["nb_device_url"] = device.get_absolute_url()
+            neighbor["nb_device"] = device.name
+            remote = NbInterface.objects.filter(device=device, name=neighbor.get("port")).first() if neighbor.get("port") else None
+            neighbor["nb_port_url"] = remote.get_absolute_url() if remote else None
+    return {"lens_info": info, "lens_device_ip": ip, "lens_port": iface.name,
+            "lens_device_name": getattr(iface.device, "name", None)}
+
+
 def interface_nodes_context(iface):
-    """Active nodes on one interface — the Netdisco-backed part of the
-    interface panel, served by LensInterfaceNodesDataView via htmx."""
+    """Active nodes on one interface — the interface panel's "MACs",
+    loaded on request by LensInterfaceNodesDataView."""
     ip = _device_ip(iface.device)
     backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
     nodes = []
-    nac = None
     if backends:
-        # 802.1X/NAC state of the port, one call, alongside the node fetch
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            pae_f = executor.submit(backends[0].port_pae, ip, iface.name)
-            nodes = [dict(n) for n in _device_nodes(backends, ip, port=iface.name) if n.get("active")]
-            pae = pae_f.result() or {}
-        if pae.get("authconfig_state") or pae.get("port_control"):
-            nac = pae
+        nodes = [dict(n) for n in _device_nodes(backends, ip, port=iface.name) if n.get("active")]
         # client IP/name from ARP, where some router has resolved the MAC
         macs = sorted({n["mac"] for n in nodes if n.get("mac")})[:MAX_RESOLVED_MACS]
         with ThreadPoolExecutor() as executor:
@@ -385,7 +397,7 @@ def interface_nodes_context(iface):
             n["client_ip"] = client.get("ip")
             n["client_name"] = client.get("dns")
     return {
-        "lens_nodes": nodes, "lens_nac": nac, "lens_device_ip": ip, "lens_port": iface.name,
+        "lens_nodes": nodes, "lens_device_ip": ip, "lens_port": iface.name,
         "lens_device_name": getattr(iface.device, "name", None),
     }
 
@@ -407,17 +419,27 @@ class InterfaceLensPanel(PluginTemplateExtension):
     models = ["dcim.interface"]
 
     def full_width_page(self):
-        if not self.context["request"].user.has_perm("netbox_lens.use_lens"):
-            return ""
         iface = self.context["object"]
+        if not self._enabled(iface):
+            return ""
+        return self.render("netbox_lens/interface_nodes_panel.html", extra_context=self._ctx(iface))
+
+    def right_page(self):
+        iface = self.context["object"]
+        if not self._enabled(iface):
+            return ""
+        return self.render("netbox_lens/interface_port_panel.html", extra_context=self._ctx(iface))
+
+    def _enabled(self, iface):
         # get_backends only reads config, no network — cheap enough to decide
         # here whether there's anything to load at all.
-        if not _device_ip(iface.device) or not get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})):
-            return ""
-        return self.render("netbox_lens/interface_nodes_panel.html", extra_context={
-            "lens_interface_pk": iface.pk,
-            "lens_port": iface.name,
-        })
+        return (self.context["request"].user.has_perm("netbox_lens.use_lens")
+                and _device_ip(iface.device)
+                and get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})))
+
+    @staticmethod
+    def _ctx(iface):
+        return {"lens_interface_pk": iface.pk, "lens_port": iface.name}
 
 
 class DeviceListLensButtons(PluginTemplateExtension):

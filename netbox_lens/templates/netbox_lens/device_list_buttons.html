@@ -8,6 +8,6 @@
     <li><a class="dropdown-item" href="{% url 'plugins:netbox_lens:refresh_ips' %}{% if lens_filter_qs %}?{{ lens_filter_qs }}{% endif %}">
       <i class="mdi mdi-ip-network" aria-hidden="true"></i> {% trans "Refresh IPs" %}</a></li>
     <li><a class="dropdown-item" href="{% url 'plugins:netbox_lens:bulk_sync' %}{% if lens_filter_qs %}?{{ lens_filter_qs }}{% endif %}">
-      <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Sync" %}</a></li>
+      <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Netdisco Sync" %}</a></li>
   </ul>
 </div>

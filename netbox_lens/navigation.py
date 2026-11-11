@@ -60,7 +60,7 @@ menu = PluginMenu(
                 ),
                 PluginMenuItem(
                     link="plugins:netbox_lens:bulk_sync",
-                    link_text=_("Sync"),
+                    link_text=_("Netdisco Sync"),
                     permissions=["netbox_lens.trigger_lens"],
                 ),
             ),

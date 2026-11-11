@@ -77,6 +77,10 @@ class LensBackend(ABC):
     def port_pae(self, device_ip: str, port: str) -> dict:
         return {}
 
+    def port_info(self, device_ip: str, port: str) -> dict | None:
+        """Everything the backend knows about one port, or None if unsupported/failed."""
+        return None
+
     def search_ports(self, query: str, partial: bool = True) -> list:
         return []
 

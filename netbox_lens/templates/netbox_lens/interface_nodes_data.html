@@ -1,99 +1,34 @@
 {% load i18n %}
 {% load lens_filters %}
-{% if lens_nodes or lens_nac %}
-<div class="card mb-3">
-  <div class="card-header d-flex align-items-center gap-2">
-    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
-    <strong>LENS</strong>
-    {% if lens_port %}
-    <span class="text-muted">— {{ lens_port }}</span>
-    {% endif %}
-    <span class="badge text-bg-secondary">{{ lens_nodes|length }}</span>
-    <small class="text-muted ms-auto"><code>{{ lens_device_ip }}</code></small>
-  </div>
-  {% if lens_nac %}
-  <div class="card-body py-2 small d-flex flex-wrap align-items-center gap-3 border-bottom">
-    <span class="fw-semibold"><i class="mdi mdi-shield-account" aria-hidden="true"></i> {% trans "NAC" %}</span>
-    <span>{% trans "State" %}: <strong>{{ lens_nac.authconfig_state|default:"—" }}</strong></span>
-    <span>{% trans "Port Control" %}: {{ lens_nac.port_control|default:"—" }}</span>
-    <span>{% trans "Port Status" %}: {{ lens_nac.port_status|default:"—" }}</span>
-    <span>{% trans "User" %}: {% if lens_nac.user %}<code class="lens-copy" data-value="{{ lens_nac.user }}">{{ lens_nac.user }}</code>{% else %}—{% endif %}</span>
-    <span>MAB: {% if lens_nac.mab is None %}—{% elif lens_nac.mab %}{% trans "yes" %}{% else %}{% trans "no" %}{% endif %}</span>
-    <a class="ms-auto" href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ lens_device_name|urlencode }}&interface={{ lens_port|urlencode }}" title="{% trans 'Open NAC Status' %}">
-      <i class="mdi mdi-open-in-new" aria-hidden="true"></i>
-    </a>
-  </div>
-  {% endif %}
-  {% if lens_nodes %}
-  <div class="table-responsive">
-    <table class="table table-hover table-headings mb-0">
-      <thead>
-        <tr>
-          <th>{% trans "MAC" %}</th>
-          {% if not lens_port %}<th>{% trans "Port" %}</th>{% endif %}
-          <th>{% trans "VLAN" %}</th>
-          <th>{% trans "Client IP" %}</th>
-          <th>{% trans "Client Name" %}</th>
-          <th>{% trans "First Seen" %}</th>
-          <th>{% trans "Last Seen" %}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for node in lens_nodes %}
-        <tr>
-          <td><code class="lens-copy" data-value="{{ node.mac }}">{{ node.mac }}</code></td>
-          {% if not lens_port %}
-          <td><code class="lens-copy" data-value="{{ node.port }}">{{ node.port }}</code></td>
-          {% endif %}
-          <td>{{ node.vlan|default:"—" }}</td>
-          <td>{% if node.client_ip %}<code class="lens-copy" data-value="{{ node.client_ip }}">{{ node.client_ip }}</code>{% else %}—{% endif %}</td>
-          <td>{% if node.client_name %}<code class="lens-copy" data-value="{{ node.client_name }}">{{ node.client_name }}</code>{% else %}—{% endif %}</td>
-          <td class="text-nowrap"><span title="{{ node.time_first|lens_ago }}">{{ node.time_first|lens_datetime|default:"—" }}</span></td>
-          <td class="text-nowrap"><span title="{{ node.time_last|lens_ago }}">{{ node.time_last|lens_datetime|default:"—" }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
+{% if lens_nodes %}
+<div class="table-responsive">
+  <table class="table table-hover table-headings mb-0">
+    <thead>
+      <tr>
+        <th>{% trans "MAC" %} <span class="badge text-bg-secondary">{{ lens_nodes|length }}</span></th>
+        <th>{% trans "VLAN" %}</th>
+        <th>{% trans "Client IP" %}</th>
+        <th>{% trans "Client Name" %}</th>
+        <th>{% trans "First Seen" %}</th>
+        <th>{% trans "Last Seen" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for node in lens_nodes %}
+      <tr>
+        <td><code class="lens-copy" data-value="{{ node.mac }}">{{ node.mac }}</code></td>
+        <td>{{ node.vlan|default:"—" }}</td>
+        <td>{% if node.client_ip %}<code class="lens-copy" data-value="{{ node.client_ip }}">{{ node.client_ip }}</code>{% else %}—{% endif %}</td>
+        <td>{% if node.client_name %}<code class="lens-copy" data-value="{{ node.client_name }}">{{ node.client_name }}</code>{% else %}—{% endif %}</td>
+        <td class="text-nowrap"><span title="{{ node.time_first|lens_ago }}">{{ node.time_first|lens_datetime|default:"—" }}</span></td>
+        <td class="text-nowrap"><span title="{{ node.time_last|lens_ago }}">{{ node.time_last|lens_datetime|default:"—" }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
-
-<style>code.lens-copy { cursor: pointer; border-radius: 3px; }</style>
-<script>
-(function () {
-  if (window._lenscopying) return;
-  window._lenscopying = true;
-  document.addEventListener('click', function (e) {
-    var el = e.target.closest('code.lens-copy');
-    if (!el) return;
-    var val = el.dataset.value || el.textContent.trim();
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(val).catch(function () {});
-    } else {
-      var ta = document.createElement('textarea');
-      ta.value = val; ta.style.cssText = 'position:fixed;opacity:0';
-      document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-    }
-    el.style.outline = '2px solid #2bd9a8';
-    el.style.transition = 'outline-color .4s';
-    setTimeout(function () {
-      el.style.outlineColor = 'transparent';
-      setTimeout(function () { el.style.outline = ''; el.style.transition = ''; }, 450);
-    }, 600);
-  });
-}());
-</script>
-
 {% else %}
-<div class="card mb-3">
-  <div class="card-header d-flex align-items-center gap-2">
-    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
-    <strong>LENS</strong>
-    {% if lens_port %}<span class="text-muted">— {{ lens_port }}</span>{% endif %}
-  </div>
-  <div class="card-body text-muted">
-    {% trans "No nodes discovered on this device." %}
-  </div>
+<div class="card-body text-muted small">
+  <i class="mdi mdi-lan-disconnect" aria-hidden="true"></i> {% trans "No active MACs on this port." %}
 </div>
 {% endif %}

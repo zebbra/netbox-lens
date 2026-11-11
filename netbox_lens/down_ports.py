@@ -136,7 +136,6 @@ def build_down_ports(backend, min_days=30, oper="down", admin="any", basis=None,
             # Netdisco reports speed as text ("1 Gbps"); NetBox's own value
             # (kbps) is more consistent with the rest of LENS when present.
             "speed": _format_speed(iface.speed) if iface and iface.speed else speed,
-            "managed": iface.cf.get("interface_severity") if iface else None,
             "admin": p.get("up_admin"),
             "oper": p.get("up"),
             "last_mac": p.get("last_mac"),

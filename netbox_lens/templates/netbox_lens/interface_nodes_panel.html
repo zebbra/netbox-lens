@@ -1,15 +1,17 @@
 {% load i18n %}
-{# Shell only: the Netdisco lookup runs in interface_nodes_data via htmx, after the interface page has rendered. #}
-<div hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=lens_interface_pk %}" hx-trigger="load" hx-swap="outerHTML">
-  <div class="card mb-3">
-    <div class="card-header d-flex align-items-center gap-2">
-      <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
-      <strong>LENS</strong>
-      <span class="text-muted">— {{ lens_port }}</span>
-    </div>
-    <div class="card-body text-muted small d-flex align-items-center gap-2">
-      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-      {% trans "Loading from Netdisco…" %}
-    </div>
+{# Full width: active MACs on the port, fetched only when the button is clicked. #}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>LENS</strong> <span class="text-muted">— {% trans "MACs on" %} {{ lens_port }}</span>
+    <span id="lens-macs-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+    <button type="button" class="btn btn-sm btn-outline-primary ms-auto"
+            hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=lens_interface_pk %}"
+            hx-target="#lens-iface-macs" hx-swap="innerHTML" hx-indicator="#lens-macs-spinner"
+            title="{% trans 'Active MACs on this port, with client IP and name from ARP' %}">
+      <i class="mdi mdi-download" aria-hidden="true"></i> {% trans "Load" %}
+    </button>
   </div>
+  <div id="lens-iface-macs"></div>
 </div>
+{% include "netbox_lens/interface_lens_assets.html" %}

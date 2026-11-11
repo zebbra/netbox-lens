@@ -8,10 +8,18 @@
   </li>
   <li class="nav-item">
     <a class="nav-link{% if bulk_tab == 'sync' %} active{% endif %}" href="{% url 'plugins:netbox_lens:bulk_sync' %}?{{ filter_qs }}">
-      <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Sync" %}
+      <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Netdisco Sync" %}
     </a>
   </li>
 </ul>
+{% if presets %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <span class="text-muted small">{% trans "Presets" %}:</span>
+  {% for p in presets %}
+  <a href="?{{ p.qs }}" class="btn btn-sm py-0 {% if p.active %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ p.label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
   <span class="text-muted small">{% trans "Filter" %}:</span>
   {% for key, values in filter_params.lists %}

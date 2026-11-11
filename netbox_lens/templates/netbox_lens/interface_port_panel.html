@@ -1,0 +1,17 @@
+{% load i18n %}
+{# Right column: Netdisco's view of the port, fetched only when the button is clicked. #}
+<div class="card">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
+    <strong>LENS</strong> <span class="text-muted">— {% trans "Port info" %}</span>
+    <span id="lens-port-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+    <button type="button" class="btn btn-sm btn-outline-primary ms-auto"
+            hx-get="{% url 'plugins:netbox_lens:interface_port_data' pk=lens_interface_pk %}"
+            hx-target="#lens-iface-port" hx-swap="innerHTML" hx-indicator="#lens-port-spinner"
+            title="{% trans 'State, link change, last MAC, neighbor, PoE and NAC from Netdisco' %}">
+      <i class="mdi mdi-download" aria-hidden="true"></i> {% trans "Load" %}
+    </button>
+  </div>
+  <div id="lens-iface-port"></div>
+</div>
+{% include "netbox_lens/interface_lens_assets.html" %}
