@@ -90,6 +90,15 @@ def lens_datetime(value):
 
 
 @register.filter
+def lens_date(value):
+    """Date only (YYYY-MM-DD) for table cells, in local time."""
+    dt, _has_time = _parse(value)
+    if not dt:
+        return value or ""
+    return dt.strftime("%Y-%m-%d")
+
+
+@register.filter
 def lens_ago(value):
     """Always-relative age for the hover ("3 weeks, 2 days ago"), no cut-off."""
     dt, has_time = _parse(value)

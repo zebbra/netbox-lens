@@ -106,7 +106,7 @@
               {% endif %}
             </td>
             <td data-sort="{{ row.free_since|default:'' }}" class="text-nowrap">
-              {% if row.free_since %}<span title="{{ row.free_since|lens_ago }}">{{ row.free_since|lens_datetime }}</span>{% else %}—{% endif %}
+              {% if row.free_since %}<span title="{{ row.free_since|lens_absolute }} ({{ row.free_since|lens_ago }})">{{ row.free_since|lens_date }}</span>{% else %}—{% endif %}
             </td>
             <td class="text-nowrap text-center">
               {% for src in row.sources %}
