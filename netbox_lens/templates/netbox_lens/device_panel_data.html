@@ -2,10 +2,16 @@
 {% load lens_filters %}
 <div id="lens-stats" class="mb-3" hx-swap-oob="true">
 {% if lens_stats %}
-    <div class="d-flex gap-4">
-      <div class="text-center">
-        <div class="fs-4 fw-bold">{{ lens_stats.macs }}</div>
-        <div class="text-muted small">{% trans "Active MACs" %}</div>
+    <div class="d-flex align-items-center gap-4">
+      {# MACs / ports / VLANs need the whole node list: on click only #}
+      <div class="d-flex gap-4" id="lens-node-stats">
+        <button type="button" class="btn btn-sm btn-outline-primary"
+                hx-get="{% url 'plugins:netbox_lens:device_stats_data' pk=lens_device_pk %}"
+                hx-target="#lens-node-stats" hx-swap="innerHTML"
+                title="{% trans 'Count active MACs, ports and VLANs (loads the device’s whole MAC table from Netdisco)' %}">
+          <i class="mdi mdi-counter" aria-hidden="true"></i> {% trans "MACs / Ports / VLANs" %}
+          <span class="htmx-indicator spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        </button>
       </div>
       {% if lens_stats.aps is not None %}
       <div class="text-center" title="{% trans 'From NetBox, as of the last discobox WLC sync' %}">
@@ -13,14 +19,12 @@
         <div class="text-muted small">{% trans "APs" %}</div>
       </div>
       {% endif %}
-      <div class="text-center"{% if lens_stats.aps is not None %} title="{% trans 'From NetBox, as of the last discobox WLC sync' %}"{% endif %}>
+      {% if lens_stats.ports is not None %}
+      <div class="text-center" title="{% trans 'From NetBox, as of the last discobox WLC sync' %}">
         <div class="fs-4 fw-bold">{{ lens_stats.ports }}</div>
         <div class="text-muted small">{% trans "Ports" %}</div>
       </div>
-      <div class="text-center">
-        <div class="fs-4 fw-bold">{{ lens_stats.vlans }}</div>
-        <div class="text-muted small">{% trans "VLANs" %}</div>
-      </div>
+      {% endif %}
       <div class="text-center">
         <div class="fs-4 fw-bold">{{ lens_stats.neighbors }}</div>
         <div class="text-muted small">{% trans "Neighbors" %}</div>

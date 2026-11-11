@@ -37,6 +37,25 @@
         {% if i.poe.watts is not None %}<dt>{% trans "Power" %}</dt><dd>{{ i.poe.watts }} W</dd>{% endif %}
       </dl>
       {% endif %}
+      <div class="fw-semibold mt-2 mb-1 d-flex align-items-center gap-2">
+        <span><i class="mdi mdi-shield-account" aria-hidden="true"></i> NAC</span>
+        <a class="small fw-normal" href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ lens_device_name|urlencode }}&interface={{ lens_port|urlencode }}" title="{% trans 'Open NAC Status' %}"><i class="mdi mdi-open-in-new" aria-hidden="true"></i></a>
+      </div>
+      {% if i.nac %}
+      <dl class="lens-kv">
+        <dt>{% trans "State" %}</dt><dd><strong>{{ i.nac.authconfig_state|default:"—" }}</strong></dd>
+        <dt>{% trans "Port Control" %}</dt><dd>{{ i.nac.port_control|default:"—" }}</dd>
+        <dt>{% trans "Port Status" %}</dt><dd>{{ i.nac.port_status|default:"—" }}</dd>
+        <dt>{% trans "User" %}</dt><dd>{% if i.nac.user %}<code class="lens-copy" data-value="{{ i.nac.user }}">{{ i.nac.user }}</code>{% else %}—{% endif %}</dd>
+        <dt>MAB</dt><dd>{% if i.nac.mab is None %}—{% elif i.nac.mab %}{% trans "yes" %}{% else %}{% trans "no" %}{% endif %}</dd>
+        {% if i.nac.last_eapol_source %}<dt title="{% trans 'MAC that last sent an 802.1X (EAPOL) frame on this port' %}">{% trans "Last EAPOL" %}</dt><dd><code class="lens-copy" data-value="{{ i.nac.last_eapol_source }}">{{ i.nac.last_eapol_source }}</code></dd>{% endif %}
+      </dl>
+      {% else %}
+      <div class="text-muted">
+        {% trans "No 802.1X on this port." %}
+        {% if i.pae_enabled is False %}{% trans "802.1X is disabled on the device." %}{% endif %}
+      </div>
+      {% endif %}
     </div>
 
     <div class="col-sm-6">
@@ -86,19 +105,6 @@
     </div>
   </div>
 
-  {% if i.nac %}
-  <div class="d-flex flex-wrap align-items-center gap-3 border-top pt-2 mt-2">
-    <span class="fw-semibold"><i class="mdi mdi-shield-account" aria-hidden="true"></i> {% trans "NAC" %}</span>
-    <span>{% trans "State" %}: <strong>{{ i.nac.authconfig_state|default:"—" }}</strong></span>
-    <span>{% trans "Port Control" %}: {{ i.nac.port_control|default:"—" }}</span>
-    <span>{% trans "Port Status" %}: {{ i.nac.port_status|default:"—" }}</span>
-    <span>{% trans "User" %}: {% if i.nac.user %}<code class="lens-copy" data-value="{{ i.nac.user }}">{{ i.nac.user }}</code>{% else %}—{% endif %}</span>
-    <span>MAB: {% if i.nac.mab is None %}—{% elif i.nac.mab %}{% trans "yes" %}{% else %}{% trans "no" %}{% endif %}</span>
-    <a class="ms-auto" href="{% url 'plugins:netbox_lens:nac_status' %}?device={{ lens_device_name|urlencode }}&interface={{ lens_port|urlencode }}" title="{% trans 'Open NAC Status' %}">
-      <i class="mdi mdi-open-in-new" aria-hidden="true"></i>
-    </a>
-  </div>
-  {% endif %}
 
   {% if i.web_url %}
   <div class="text-end mt-1">

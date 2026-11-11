@@ -30,7 +30,7 @@ from .discobox import rebuild_inventory, refresh_ip, set_paused, sync_all, stats
 from .down_ports import build_down_ports
 from .forms import BASIS_CHOICES, ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
-from .template_content import apply_ap_radio_links, apply_transit_ports, device_panel_context, device_panel_enabled, interface_nodes_context, interface_port_context
+from .template_content import apply_ap_radio_links, apply_transit_ports, device_node_stats, device_panel_context, device_panel_enabled, interface_nodes_context, interface_port_context
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
@@ -1393,6 +1393,15 @@ class LensInterfaceNodesDataView(PermissionRequiredMixin, View):
     def get(self, request, pk):
         iface = get_object_or_404(NbInterface.objects.select_related("device__primary_ip4"), pk=pk)
         return render(request, "netbox_lens/interface_nodes_data.html", interface_nodes_context(iface))
+
+
+class LensDeviceStatsDataView(PermissionRequiredMixin, View):
+    """htmx partial: the device panel's MAC/port/VLAN counts, on click."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request, pk):
+        device = get_object_or_404(NbDevice.objects.restrict(request.user, "view").select_related("primary_ip4", "role"), pk=pk)
+        return render(request, "netbox_lens/device_stats_data.html", {"lens_node_stats": device_node_stats(device)})
 
 
 class LensInterfacePortDataView(PermissionRequiredMixin, View):

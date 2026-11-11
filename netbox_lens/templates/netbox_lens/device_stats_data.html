@@ -1,0 +1,19 @@
+{% load i18n %}
+{% if lens_node_stats %}
+<div class="text-center">
+  <div class="fs-4 fw-bold">{{ lens_node_stats.macs }}</div>
+  <div class="text-muted small">{% trans "Active MACs" %}</div>
+</div>
+{% if lens_node_stats.ports is not None %}
+<div class="text-center">
+  <div class="fs-4 fw-bold">{{ lens_node_stats.ports }}</div>
+  <div class="text-muted small">{% trans "Ports" %}</div>
+</div>
+{% endif %}
+<div class="text-center">
+  <div class="fs-4 fw-bold">{{ lens_node_stats.vlans }}</div>
+  <div class="text-muted small">{% trans "VLANs" %}</div>
+</div>
+{% else %}
+<span class="text-muted small">{% trans "Netdisco unavailable." %}</span>
+{% endif %}

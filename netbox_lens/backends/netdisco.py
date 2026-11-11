@@ -776,7 +776,10 @@ class NetdiscoBackend(LensBackend):
                 "port_status": props.get("pae_authconfig_port_status"),
                 "user": props.get("pae_authsess_user"),
                 "mab": props.get("pae_authsess_mab"),
+                "last_eapol_source": props.get("pae_last_eapol_frame_source"),
             } if props.get("pae_authconfig_state") or props.get("pae_authconfig_port_control") else None,
+            # 802.1X enabled on the device at all (dot1xPaeSystemAuthControl)
+            "pae_enabled": device.get("pae_is_enabled"),
             "poe": {
                 "admin": power.get("admin"),
                 "status": power.get("status"),

@@ -295,21 +295,16 @@ def device_panel_context(device, user):
     neighbors = []
     summaries = []
     if ip and backends:
-        # Three independent Netdisco round trips — run them side by side.
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            nodes_f = executor.submit(_device_nodes, backends, ip)
+        # Two independent Netdisco round trips — run them side by side. The
+        # MAC/port/VLAN counts need the device's whole node list, so they
+        # load on click (device_node_stats), not with every device page.
+        with ThreadPoolExecutor(max_workers=2) as executor:
             neighbors_f = executor.submit(_fetch_neighbors, backends, ip)
             summaries_f = executor.submit(_device_summaries, backends, ip)
-            nodes = [n for n in nodes_f.result() if n.get("active")]
             neighbors = _link_neighbors(neighbors_f.result(), device=device)
             summaries = summaries_f.result()
-        stats = {
-            "macs": len(nodes),
-            "ports": len({n["port"] for n in nodes if n.get("port")}),
-            "vlans": len({n["vlan"] for n in nodes if n.get("vlan") and n["vlan"] != "0"}),
-            "neighbors": len(neighbors),
-        }
-        if device.role and device.role.slug == "lwapp-ctr":
+        stats = {"neighbors": len(neighbors)}
+        if _is_wlc(device):
             # Netdisco reports every AP radio as a port on the WLC (thousands
             # on a big one), so count from NetBox instead, as of discobox's
             # last WLC sync: APs point at their WLC via the controller CF, and
@@ -336,6 +331,28 @@ def device_panel_context(device, user):
         "lens_inventory_last_rebuild": device.cf.get("inventory_last_rebuild"),
         "lens_snmp_modulator_last_updated": device.cf.get("snmp_modulator_last_updated"),
     }
+
+
+def _is_wlc(device):
+    return bool(device.role and device.role.slug == "lwapp-ctr")
+
+
+def device_node_stats(device):
+    """Active MACs, ports and VLANs on a device, from its whole Netdisco node
+    list — the device panel's counts, loaded on click. Ports of a WLC come
+    from NetBox (shown with the panel), so they aren't counted here."""
+    ip = _device_ip(device)
+    backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
+    if not backends:
+        return None
+    nodes = [n for n in _device_nodes(backends, ip) if n.get("active")]
+    stats = {
+        "macs": len(nodes),
+        "vlans": len({n["vlan"] for n in nodes if n.get("vlan") and n["vlan"] != "0"}),
+    }
+    if not _is_wlc(device):
+        stats["ports"] = len({n["port"] for n in nodes if n.get("port")})
+    return stats
 
 
 def device_panel_enabled(device, config):
