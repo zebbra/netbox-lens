@@ -55,6 +55,14 @@
         <dt>{% trans "Discovered" %}</dt><dd><span class="{{ i.last_discover|lens_stale_class }}" title="{{ i.last_discover|lens_absolute }}">{{ i.last_discover|lens_ago|default:"—" }}</span></dd>
         {% if i.first_seen %}<dt>{% trans "Port known since" %}</dt><dd>{{ i.first_seen|lens_date }}</dd>{% endif %}
       </dl>
+      {% if i.poe %}
+      <div class="fw-semibold mt-2 mb-1"><i class="mdi mdi-flash" aria-hidden="true"></i> PoE</div>
+      <dl class="lens-kv">
+        <dt>{% trans "Status" %}</dt><dd>{{ i.poe.status|default:"—" }}{% if i.poe.admin and i.poe.admin != "true" %} <span class="text-muted">({{ i.poe.admin }})</span>{% endif %}</dd>
+        {% if i.poe.class %}<dt>{% trans "Class" %}</dt><dd>{{ i.poe.class }}</dd>{% endif %}
+        {% if i.poe.watts is not None %}<dt>{% trans "Power" %}</dt><dd>{{ i.poe.watts }} W</dd>{% endif %}
+      </dl>
+      {% endif %}
     </div>
 
     <div class="col-12">
@@ -77,15 +85,6 @@
       {% endwith %}
       {% else %}
       <div class="text-muted">{% trans "No CDP/LLDP neighbor." %}</div>
-      {% endif %}
-
-      {% if i.poe %}
-      <div class="fw-semibold mt-2 mb-1"><i class="mdi mdi-flash" aria-hidden="true"></i> PoE</div>
-      <dl class="lens-kv">
-        <dt>{% trans "Status" %}</dt><dd>{{ i.poe.status|default:"—" }}{% if i.poe.admin and i.poe.admin != "true" %} <span class="text-muted">({{ i.poe.admin }})</span>{% endif %}</dd>
-        {% if i.poe.class %}<dt>{% trans "Class" %}</dt><dd>{{ i.poe.class }}</dd>{% endif %}
-        {% if i.poe.watts is not None %}<dt>{% trans "Power" %}</dt><dd>{{ i.poe.watts }} W</dd>{% endif %}
-      </dl>
       {% endif %}
     </div>
   </div>
