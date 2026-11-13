@@ -601,7 +601,7 @@ REBUILD_LAST_CF = "inventory_last_rebuild"
 # discobox's default rebuild.max_devices, until a run reports the real cap.
 REBUILD_BATCH_DEFAULT = 20
 # Per-device estimate before a run has measured its own average.
-REBUILD_EST_SECONDS = 150
+REBUILD_EST_SECONDS = 40
 MODULATOR_EST_SECONDS = 30
 
 
