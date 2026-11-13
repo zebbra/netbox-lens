@@ -26,6 +26,7 @@ from .arp_history import build_arp_history
 from .backends import get_backends
 from .backends.base import SearchResult
 from .discobox import health as discobox_health
+from .discobox import rebuild_all_cancel, rebuild_all_start, rebuild_all_status
 from .discobox import rebuild_inventory, refresh_ip, set_paused, sync_all, stats as discobox_stats, sync_device
 from .down_ports import build_down_ports
 from .forms import BASIS_CHOICES, ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
@@ -36,6 +37,8 @@ from .nac_status import build_nac_status
 from .snmp_modulator import health as snmp_modulator_health
 from .snmp_modulator import stats as snmp_modulator_stats
 from .snmp_modulator import probe as snmp_modulator_probe
+from .snmp_modulator import probe_devices as snmp_modulator_probe_devices
+from .snmp_modulator import probe_run_cancel, probe_run_start, probe_run_status
 
 try:
     from dcim.models import Device as NbDevice
@@ -581,6 +584,37 @@ def _refresh_ips_filter(request):
 
 # Netdisco Sync preset: devices whose last sync is older than this.
 SYNC_STALE_DAYS = 30
+# Device CFs the SNMP modulator writes (Modulator bulk tab: column and presets).
+MODULATOR_LAST_CF = "snmp_modulator_last_updated"
+MODULATOR_MODULE_CF = "snmp_exporter_module"
+# Device CF discobox stamps after each applied rebuild (Bulk Rebuild column and presets).
+REBUILD_LAST_CF = "inventory_last_rebuild"
+# discobox's default rebuild.max_devices, until a run reports the real cap.
+REBUILD_BATCH_DEFAULT = 20
+# Per-device estimate before a run has measured its own average.
+REBUILD_EST_SECONDS = 150
+MODULATOR_EST_SECONDS = 30
+
+
+def _pin_tag(service):
+    """The NetBox tag slug that pins a device against this service, or None."""
+    tags = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("pin_tags") or {}
+    return tags.get(service) or None
+
+
+def _pinned_ids(service, ids):
+    """Those of these device ids that carry the service's pin tag."""
+    tag = _pin_tag(service)
+    if not tag or not ids:
+        return set()
+    return set(NbDevice.objects.filter(pk__in=ids, tags__slug=tag).values_list("pk", flat=True))
+
+
+def _device_filters_exist(*keys):
+    """Whether the device filterset has all these keys here: a missing custom
+    field, or a lookup its type lacks (__empty on text), fails the whole filter."""
+    filters = DeviceFilterSet(None).filters
+    return all(k in filters for k in keys)
 
 
 def _existing_roles(slugs):
@@ -611,6 +645,33 @@ def _bulk_presets(tab, current_qs):
         for role in infra:
             if role in names:
                 presets.append((names[role], qs(*base, ("role", role))))
+    elif tab == "rebuild":
+        base = (("has_primary_ip", "true"), ("status", "active"))
+        skip = tuple(("role__n", r) for r in _existing_roles(_refresh_ip_excluded_roles()))
+        stale = (timezone.localdate() - timedelta(days=SYNC_STALE_DAYS)).isoformat()
+        last = f"cf_{REBUILD_LAST_CF}"
+        has_last = _device_filters_exist(f"{last}__empty", f"{last}__lt")
+        presets += [
+            (_("Switches"), qs(*base, ("role", "switch"))) if _existing_roles(["switch"]) else None,
+            (_("Not rebuilt for %(days)d days") % {"days": SYNC_STALE_DAYS},
+             qs(*base, *skip, (f"{last}__empty", "false"), (f"{last}__lt", stale))) if has_last else None,
+            (_("Never rebuilt"), qs(*base, *skip, (f"{last}__empty", "true"))) if has_last else None,
+        ]
+    elif tab == "modulator":
+        base = (("has_primary_ip", "true"), ("status", "active"))
+        skip = tuple(("role__n", r) for r in _existing_roles(_refresh_ip_excluded_roles()))
+        stale = (timezone.localdate() - timedelta(days=SYNC_STALE_DAYS)).isoformat()
+        last = f"cf_{MODULATOR_LAST_CF}"
+        module_empty = f"cf_{MODULATOR_MODULE_CF}__empty"
+        has_last = _device_filters_exist(f"{last}__empty", f"{last}__lt")
+        presets += [
+            (_("Switches"), qs(*base, ("role", "switch"))) if _existing_roles(["switch"]) else None,
+            (_("No SNMP module"), qs(*base, *skip, (module_empty, "true")))
+            if _device_filters_exist(module_empty) else None,
+            (_("Not modulated for %(days)d days") % {"days": SYNC_STALE_DAYS},
+             qs(*base, *skip, (f"{last}__empty", "false"), (f"{last}__lt", stale))) if has_last else None,
+            (_("Never modulated"), qs(*base, *skip, (f"{last}__empty", "true"))) if has_last else None,
+        ]
     else:
         base = (("has_primary_ip", "true"), ("status", "active"))
         skip = tuple(("role__n", r) for r in _existing_roles(_refresh_ip_excluded_roles()))
@@ -733,17 +794,20 @@ class LensBulkSyncView(PermissionRequiredMixin, View):
         if len(rows) > REFRESH_IPS_MAX:
             context["too_many"] = REFRESH_IPS_MAX
         else:
+            pinned = _pinned_ids("discobox", [d.pk for d in rows])
+            context.update({"pin_tag": _pin_tag("discobox"), "pinned_count": len(pinned),
+                            "matched": len(rows) - len(pinned)})
             context["rows"] = [{
                 "id": d.pk, "name": d.name, "url": d.get_absolute_url(), "ip": _device_ip(d),
                 "role": d.role.name if d.role else None, "site": d.site.name if d.site else None,
-                "last_sync": d.cf.get("netdisco_last_update"),
+                "last_sync": d.cf.get("netdisco_last_update"), "pinned": d.pk in pinned,
             } for d in rows]
         return context
 
     def post(self, request):
         params = QueryDict(request.POST.get("filter_qs", ""))
         context = self._context(request, params)
-        ids = [r["id"] for r in context.get("rows") or []]
+        ids = [r["id"] for r in context.get("rows") or [] if not r["pinned"]]
         if context.get("error") or not ids:
             context.setdefault("error", "No devices to sync.")
             return render(request, "netbox_lens/bulk_sync.html", context)
@@ -755,6 +819,260 @@ class LensBulkSyncView(PermissionRequiredMixin, View):
             data["recent"] = max(0, len(ids) - (data.get("selected") or 0) - (data.get("not_in_netdisco") or 0))
         context.update({"result": data if ok else None, "result_error": error, "forced": force})
         return render(request, "netbox_lens/bulk_sync.html", context)
+
+
+def _run_context(ok, run, error, est_seconds, selectable):
+    """A bulk run (discobox /rebuild/all, modulator /probe/run) ready for the
+    template: progress, remaining-time estimate, per-device rows with links.
+    Both services put their totals (total, done, remaining, running, ...) at
+    the top level of the run."""
+    if not ok:
+        return {"run_error": error, "run_unsupported": bool((run or {}).get("unsupported"))}
+    run = run or {}
+    if run.get("status") in (None, "none"):
+        return {"run": None}
+    devices = run.get("devices") or []
+    urls = {d.pk: d.get_absolute_url()
+            for d in NbDevice.objects.filter(pk__in=[e.get("device_id") for e in devices if e.get("device_id")])}
+    for e in devices:
+        e["url"] = urls.get(e.get("device_id"))
+        e["selectable"] = bool(e.get("device_id")) and selectable(e)
+    total = run.get("total") or len(devices)
+    done = run.get("done") or 0
+    left = (run.get("remaining") or 0) + (run.get("running") or 0)
+    per = run.get("avg_duration_s") or est_seconds
+    return {"run": {
+        **run, "devices": devices, "total": total, "done": done,
+        "percent": int(done * 100 / total) if total else 0,
+        "eta_min": max(1, round(left * per / 60)) if left else 0,
+        "running": run.get("status") == "running",
+        "selectable": any(e["selectable"] for e in devices),
+    }}
+
+
+def _rebuild_run_context(config):
+    ok, run, error = rebuild_all_status(config)
+    ctx = _run_context(ok, run, error, REBUILD_EST_SECONDS, lambda e: e.get("status") in ("ok", "blocked"))
+    for e in (ctx.get("run") or {}).get("devices") or []:
+        prune = e.get("prune") or {}
+        e["deletes"] = sum(prune.get(k) or 0 for k in ("interfaces_deleted", "modules_deleted", "inventory_deleted", "sfps_deleted"))
+        e["preselect"] = e.get("status") == "ok"
+        b = prune.get("blocked") or {}
+        if b and not e.get("reason"):
+            e["reason"] = _("brake: %(stale)s of %(total)s %(kind)s (%(percent)s%%) would go") % {
+                "stale": b.get("stale"), "total": b.get("total"), "kind": b.get("kind"), "percent": b.get("percent")}
+    return ctx
+
+
+def _modulator_run_context(config):
+    ok, run, error = probe_run_status(config)
+    ctx = _run_context(ok, run, error, MODULATOR_EST_SECONDS, lambda e: e.get("status") == "ok" and e.get("changed"))
+    for e in (ctx.get("run") or {}).get("devices") or []:
+        e["preselect"] = e["selectable"]
+        old, new = e.get("previous_modules") or [], e.get("final_modules") or []
+        e["added"] = [m for m in new if m not in old]
+        e["removed"] = [m for m in old if m not in new]
+    return ctx
+
+
+class _BulkRunView(PermissionRequiredMixin, View):
+    """A bulk page whose work is one async run on the service side (one run at
+    a time across all users): batches of the service's cap over the devices
+    matching a NetBox device filter, a dry run first, then apply the devices
+    ticked in its result; admins can apply a batch directly."""
+    permission_required = "netbox_lens.trigger_lens"
+    tab = template = config_key = last_cf = None
+    est_seconds = 60
+    batch_default = 20
+
+    def run_context(self, config):
+        raise NotImplementedError
+
+    def start(self, config, ids, dry_run):
+        raise NotImplementedError
+
+    def cancel(self, config):
+        raise NotImplementedError
+
+    def config(self):
+        return settings.PLUGINS_CONFIG.get("netbox_lens", {}).get(self.config_key, {})
+
+    def get(self, request):
+        params = _refresh_ips_filter(request)
+        if not params:
+            params = QueryDict(mutable=True)
+            params["has_primary_ip"] = "true"
+            params["status"] = "active"
+            params["role"] = "switch"
+            return redirect(f"{request.path}?{params.urlencode()}")
+        return render(request, self.template, self._context(request, params))
+
+    def row_extra(self, device):
+        return {"last": device.cf.get(self.last_cf)}
+
+    def _context(self, request, params):
+        context = {"filter_params": params, "filter_qs": params.urlencode(), "bulk_tab": self.tab,
+                   "can_direct": request.user.is_superuser, "presets": _bulk_presets(self.tab, params.urlencode()),
+                   "page_url": request.path, "run_url": request.path + "run/"}
+        context.update(self.run_context(self.config()))
+        devices, error = _bulk_devices(request, params)
+        if error:
+            context["error"] = error
+            return context
+        context["no_ip_count"] = devices.filter(primary_ip4__isnull=True).count()
+        rows = list(devices.filter(primary_ip4__isnull=False).select_related("primary_ip4", "role", "site")
+                    .order_by("name")[:REFRESH_IPS_MAX + 1])
+        context["matched"] = len(rows)
+        if len(rows) > REFRESH_IPS_MAX:
+            context["too_many"] = REFRESH_IPS_MAX
+            return context
+        run = context.get("run") or {}
+        # devices the last run handled (not the cancelled ones) wait for a later batch
+        handled = {e.get("device_id") for e in run.get("devices") or [] if e.get("status") != "cancelled"}
+        batch_size = run.get("max_devices") or self.batch_default
+        pinned = _pinned_ids(self.config_key, [d.pk for d in rows])
+        context.update({"pin_tag": _pin_tag(self.config_key), "pinned_count": len(pinned),
+                        "sendable": len(rows) - len(pinned)})
+        pending = [d for d in rows if d.pk not in handled and d.pk not in pinned]
+        batch = pending[:batch_size]
+        context.update({
+            "rows": [{
+                "id": d.pk, "name": d.name, "url": d.get_absolute_url(), "ip": _device_ip(d),
+                "role": d.role.name if d.role else None, "site": d.site.name if d.site else None,
+                "in_batch": d in batch, "handled": d.pk in handled, "pinned": d.pk in pinned, **self.row_extra(d),
+            } for d in rows],
+            "batch_ids": ",".join(str(d.pk) for d in batch), "batch_count": len(batch),
+            "pending_count": len(pending), "batch_size": batch_size,
+            "batch_eta_min": max(1, round(len(batch) * self.est_seconds / 60)) if batch else 0,
+        })
+        return context
+
+    def post(self, request):
+        filter_qs = request.POST.get("filter_qs", "")
+        back = redirect(f"{request.path}?{filter_qs}")
+        config = self.config()
+        action = request.POST.get("action")
+        if action == "cancel":
+            ok, _data, error = self.cancel(config)
+            if ok:
+                messages.info(request, _("Run cancelled: the queued devices are dropped, the one running finishes."))
+            else:
+                messages.error(request, error)
+            return back
+
+        if action == "preview":
+            ids, dry_run = [i for i in request.POST.get("batch", "").split(",") if i.isdigit()], True
+        elif action == "apply_batch" and request.user.is_superuser:
+            ids, dry_run = [i for i in request.POST.get("batch", "").split(",") if i.isdigit()], False
+        elif action == "apply_selected":
+            ids, dry_run = [i for i in request.POST.getlist("device") if i.isdigit()], False
+        else:
+            messages.error(request, _("Unknown action."))
+            return back
+        if not dry_run and request.POST.get("confirm") != "yes":
+            messages.error(request, _("Tick the confirmation first."))
+            return back
+        # only devices this user may see and that are not pinned, whatever the form sent
+        ids = list(NbDevice.objects.restrict(request.user, "view").filter(pk__in=ids).values_list("pk", flat=True))
+        ids = [i for i in ids if i not in _pinned_ids(self.config_key, ids)]
+        if not ids:
+            messages.error(request, _("No devices selected."))
+            return back
+        ok, data, error = self.start(config, ids, dry_run)
+        if not ok:
+            messages.error(request, error)
+            return back
+        data = data or {}
+        msg = (_("Dry run started for %(n)d devices.") if dry_run else _("Run started for %(n)d devices.")) % {"n": data.get("queued") or 0}
+        extra = [f"{data[k]} {label}" for k, label in (
+            ("over_limit", _("over the limit (next batch)")), ("not_in_netdisco", _("not in Netdisco")),
+            ("pinned", _("pinned")), ("skipped", _("skipped")), ("invalid", _("invalid"))) if data.get(k)]
+        messages.success(request, msg + (" " + ", ".join(extra) + "." if extra else ""))
+        return back
+
+
+class _BulkRunPanelView(PermissionRequiredMixin, View):
+    """htmx: the run panel of a bulk run page, polled while the run is going."""
+    permission_required = "netbox_lens.trigger_lens"
+    page = None
+    template = None
+
+    def get(self, request):
+        page = self.page()
+        context = {"filter_qs": request.GET.get("filter_qs", ""), "run_url": request.path,
+                   "page_url": request.path.removesuffix("run/")}
+        context.update(page.run_context(page.config()))
+        response = render(request, self.template, context)
+        if not (context.get("run") or {}).get("running"):
+            # the run just ended: reload the page so the batch and the device list catch up
+            response["HX-Refresh"] = "true"
+        return response
+
+
+class LensBulkRebuildView(_BulkRunView):
+    """Bulk Rebuild: discobox's async /rebuild/all (2.5.0+)."""
+    tab, template, config_key, last_cf = "rebuild", "netbox_lens/bulk_rebuild.html", "discobox", REBUILD_LAST_CF
+    est_seconds, batch_default = REBUILD_EST_SECONDS, REBUILD_BATCH_DEFAULT
+
+    def run_context(self, config):
+        return _rebuild_run_context(config)
+
+    def start(self, config, ids, dry_run):
+        return rebuild_all_start(config, ids, dry_run=dry_run)
+
+    def cancel(self, config):
+        return rebuild_all_cancel(config)
+
+
+class LensBulkRebuildRunView(_BulkRunPanelView):
+    page, template = LensBulkRebuildView, "netbox_lens/bulk_rebuild_run.html"
+
+
+class LensBulkModulatorView(_BulkRunView):
+    """Bulk SNMP Modulator: the modulator's async /probe/run with dry run. An
+    older modulator without it falls back to the fire-and-forget
+    /probe/netbox (server mode, no preview, no result)."""
+    tab, template, config_key, last_cf = "modulator", "netbox_lens/bulk_modulator.html", "snmp_modulator", MODULATOR_LAST_CF
+    est_seconds = MODULATOR_EST_SECONDS
+
+    def run_context(self, config):
+        return _modulator_run_context(config)
+
+    def start(self, config, ids, dry_run):
+        return probe_run_start(config, ids, dry_run=dry_run)
+
+    def cancel(self, config):
+        return probe_run_cancel(config)
+
+    def row_extra(self, device):
+        return {"last": device.cf.get(MODULATOR_LAST_CF), "module": device.cf.get(MODULATOR_MODULE_CF),
+                "auth": device.cf.get("snmp_auth_profile")}
+
+    def post(self, request):
+        if request.POST.get("action") != "legacy":
+            return super().post(request)
+        # older modulator: one fire-and-forget probe over the ids, in the server's mode
+        filter_qs = request.POST.get("filter_qs", "")
+        if request.POST.get("confirm") != "yes":
+            messages.error(request, _("Tick the confirmation first."))
+            return redirect(f"{request.path}?{filter_qs}")
+        context = self._context(request, QueryDict(filter_qs))
+        ids = [r["id"] for r in context.get("rows") or [] if not r["pinned"]]
+        if not ids:
+            messages.error(request, context.get("error") or _("No devices to probe."))
+        else:
+            ok, data, error = snmp_modulator_probe_devices(self.config(), ids)
+            if not ok:
+                messages.error(request, error)
+            elif (data or {}).get("status") == "queued":
+                messages.success(request, _("Probe queued for %(n)d devices. Results show up in the device's SNMP fields as each one finishes.") % {"n": len(ids)})
+            else:
+                messages.warning(request, _("Not queued: %(r)s") % {"r": (data or {}).get("reason") or (data or {}).get("status")})
+        return redirect(f"{request.path}?{filter_qs}")
+
+
+class LensBulkModulatorRunView(_BulkRunPanelView):
+    page, template = LensBulkModulatorView, "netbox_lens/bulk_modulator_run.html"
 
 
 def _run_rebuild_now(config, ip):

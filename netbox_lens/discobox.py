@@ -20,7 +20,7 @@ def rebuild_inventory(config, device_ip, dry_run=True):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
-        resp = requests.get(
+        resp = requests.post(
             f"{base_url}/rebuild",
             headers=headers,
             params={"host": device_ip, "dry_run": "true" if dry_run else "false"},
@@ -138,7 +138,7 @@ def sync_device(config, device_ip, force=False):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
-        resp = requests.get(
+        resp = requests.post(
             f"{base_url}/sync",
             headers=headers,
             params={"host": device_ip, "force": "true" if force else "false"},
@@ -237,3 +237,57 @@ def sync_all(config, device_ids, force=False):
         return True, resp.json() if resp.content else {}, None
     except requests.exceptions.RequestException as exc:
         return False, None, str(exc)
+
+
+def _rebuild_all(config, method, params=None):
+    """One call to discobox's /rebuild/all (2.5.0+). Returns (ok, data, error);
+    a 4xx/5xx passes on discobox's JSON reason (409: a run is already active)."""
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "Discobox URL is not configured."
+    headers = {"Accept": "application/json"}
+    token = config.get("token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = requests.request(
+            method, f"{base_url}/rebuild/all", headers=headers, params=params or [],
+            timeout=config.get("status_timeout", 15), verify=config.get("verify_ssl", True),
+        )
+        if resp.status_code == 404 and method == "GET":
+            return False, None, "This discobox has no bulk rebuild (needs 2.5.0 or later)."
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+                reason = body.get("error") or body.get("detail") or body.get("reason")
+            except ValueError:
+                reason = None
+            if resp.status_code == 409:
+                reason = reason or "A bulk rebuild is already running."
+            return False, None, reason or f"HTTP {resp.status_code} from discobox"
+        return True, resp.json() if resp.content else {}, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)
+
+
+def rebuild_all_start(config, device_ids, dry_run=True):
+    """POST /rebuild/all for these NetBox device ids: queues one run (one
+    rebuild at a time, capped at discobox's rebuild.max_devices; the rest
+    comes back as over_limit). 202 with {dry_run, selected, queued,
+    over_limit, in_progress, not_in_netdisco, invalid, max_devices}."""
+    params = [("id", str(i)) for i in device_ids]
+    params.append(("dry_run", "true" if dry_run else "false"))
+    return _rebuild_all(config, "POST", params)
+
+
+def rebuild_all_status(config):
+    """GET /rebuild/all: the current or last run — {status: running|done|
+    cancelled|none, dry_run, started, finished, max_devices, totals{...},
+    avg_duration_s, devices[{host, hostname, device_id, status, reason,
+    duration_s, prune, new_stack_members}]}. In memory: "none" after a restart."""
+    return _rebuild_all(config, "GET")
+
+
+def rebuild_all_cancel(config):
+    """DELETE /rebuild/all: drops the devices still queued; the one running finishes."""
+    return _rebuild_all(config, "DELETE")

@@ -1,0 +1,15 @@
+{% extends "netbox_lens/bulk_run_page.html" %}
+{% load i18n %}
+{% load lens_filters %}
+{% block title %}LENS – {% trans "Rebuild Inventory" %}{% endblock %}
+{% block intro %}
+{% blocktrans trimmed with size=batch_size|default:20 %}
+Rebuilds the inventory of the devices below in batches of {{ size }}: the sync, plus deleting what Netdisco no longer has.
+One device at a time, about 2–3 min each, in the background — you can leave this page. Start with a dry run, then
+apply the devices you tick in its result. A dry run still writes the normal sync; only the deletions are held back.
+A device that would lose too much is blocked, in the dry run and when applied.
+{% endblocktrans %}
+{% endblock %}
+{% block run_panel %}{% include "netbox_lens/bulk_rebuild_run.html" %}{% endblock %}
+{% block head %}<th data-sort-type="text">{% trans "Last rebuild" %}</th>{% endblock %}
+{% block row %}<td data-sort="{{ r.last|default:'' }}"><span title="{{ r.last|lens_absolute }}">{{ r.last|lens_relative|default:"—" }}</span></td>{% endblock %}

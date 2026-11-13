@@ -19,6 +19,17 @@
     <tr><th>{% trans "Modules skipped (foreign)" %}</th><td>{{ data.prune.modules_skipped_foreign }}</td></tr>
     <tr><th>{% trans "Inventory items deleted" %}</th><td>{{ data.prune.inventory_deleted }}</td></tr>
     <tr><th>{% trans "SFPs deleted" %}</th><td>{{ data.prune.sfps_deleted }}</td></tr>
+    {% with sm=data.prune.stack_members cur=device.cf.stack_members %}
+    {% if sm %}
+    <tr class="table-warning">
+      <th>{% trans "Stack members" %}</th>
+      <td>{{ sm.was|default:"—" }} → <strong>{% if sm.now is None %}{% trans "cleared" %}{% else %}{{ sm.now }}{% endif %}</strong>
+        {% if sm.now is None %}<span class="text-muted small">({% trans "Netdisco no longer sees a multi-member stack" %})</span>{% endif %}</td>
+    </tr>
+    {% elif cur %}
+    <tr><th>{% trans "Stack members" %}</th><td>{{ cur }} <span class="text-muted small">({% trans "unchanged" %})</span></td></tr>
+    {% endif %}
+    {% endwith %}
   </tbody>
 </table>
 {% if data.reason %}

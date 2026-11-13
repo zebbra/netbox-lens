@@ -1,0 +1,106 @@
+{% load i18n %}
+{% load lens_filters %}
+{# Base of a bulk run panel (Bulk Rebuild, Bulk SNMP Modulator); polls itself while the run is going. #}
+<div id="lens-bulk-run"{% if run.running %}
+     hx-get="{{ run_url }}?filter_qs={{ filter_qs|urlencode }}"
+     hx-trigger="every 10s" hx-swap="outerHTML"{% endif %}>
+{% if run_error %}
+{% if not run_unsupported %}<div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ run_error }}</div>{% endif %}
+{% elif run %}
+<div class="card mb-3">
+  <div class="card-header d-flex flex-wrap align-items-center gap-2">
+    <strong>{% if run.running %}{% trans "Running" %}{% elif run.status == "cancelled" %}{% trans "Cancelled" %}{% elif run.status == "interrupted" %}{% trans "Interrupted (service restarted)" %}{% else %}{% trans "Last run" %}{% endif %}</strong>
+    {% if run.dry_run %}<span class="badge text-bg-warning">{% trans "Dry run" %}</span>{% else %}<span class="badge text-bg-danger">{% trans "Applied" %}</span>{% endif %}
+    <span class="small">{% blocktrans trimmed with done=run.done total=run.total %}{{ done }} of {{ total }} done{% endblocktrans %}{% if run.running and run.eta_min %} · {% blocktrans trimmed with m=run.eta_min %}about {{ m }} min left{% endblocktrans %}{% endif %}</span>
+    {% if run.running %}<span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>{% endif %}
+    <span class="small text-muted">
+      {% if run.started %}{% trans "started" %} {{ run.started|lens_datetime }}{% endif %}{% if run.finished %} · {% trans "finished" %} {{ run.finished|lens_datetime }}{% endif %}
+    </span>
+    {% if run.running %}
+    <form method="post" action="{{ page_url }}" class="ms-auto">
+      {% csrf_token %}
+      <input type="hidden" name="filter_qs" value="{{ filter_qs }}">
+      <button type="submit" name="action" value="cancel" class="btn btn-sm btn-outline-danger"
+              title="{% trans 'Drop the queued devices; the one running finishes' %}">
+        <i class="mdi mdi-stop" aria-hidden="true"></i> {% trans "Cancel" %}
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% if run.running %}
+  <div class="progress rounded-0" style="height: 4px"><div class="progress-bar" style="width: {{ run.percent }}%"></div></div>
+  {% endif %}
+  <form method="post" action="{{ page_url }}">
+    {% csrf_token %}
+    <input type="hidden" name="filter_qs" value="{{ filter_qs }}">
+    <div class="table-responsive">
+      <table class="table table-hover table-headings mb-0">
+        <thead>
+          <tr>
+            {% if run.dry_run and not run.running and run.selectable %}<th style="width: 1%"><input type="checkbox" class="form-check-input" id="lens-rb-all" title="{% trans 'Select all' %}"></th>{% endif %}
+            <th>{% trans "Device" %}</th>
+            <th>{% trans "Status" %}</th>
+            {% block head %}{% endblock %}
+            <th class="text-end">{% trans "Time" %}</th>
+            <th>{% trans "Note" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in run.devices %}
+          <tr{% if e.status == "queued" or e.status == "cancelled" %} class="text-muted"{% endif %}>
+            {% if run.dry_run and not run.running and run.selectable %}
+            <td>{% if e.selectable %}<input type="checkbox" class="form-check-input lens-rb-pick" name="device" value="{{ e.device_id }}"{% if e.preselect %} checked{% endif %}>{% endif %}</td>
+            {% endif %}
+            <td>{% if e.url %}<a href="{{ e.url }}">{% endif %}{% if e.hostname %}{{ e.hostname }}{% elif e.device_name %}{{ e.device_name }}{% else %}{{ e.host }}{% endif %}{% if e.url %}</a>{% endif %}</td>
+            <td>
+              {% if e.status == "ok" %}<span class="badge text-bg-success">ok</span>
+              {% elif e.status == "running" %}<span class="badge text-bg-primary">{% trans "running" %}</span>
+              {% elif e.status == "blocked" %}<span class="badge text-bg-warning" title="{% trans 'Would delete too much: its deletions are skipped' %}">{% trans "blocked" %}</span>
+              {% elif e.status == "unreachable" %}<span class="badge text-bg-warning" title="{% trans 'No module answered: the existing modules are kept' %}">{% trans "unreachable" %}</span>
+              {% elif e.status == "error" %}<span class="badge text-bg-danger">error</span>
+              {% elif e.status == "skipped" %}<span class="badge text-bg-secondary">{% trans "skipped" %}</span>
+              {% elif e.status == "cancelled" %}<span class="badge text-bg-secondary">{% trans "cancelled" %}</span>
+              {% else %}<span class="badge text-bg-light">{% trans "queued" %}</span>{% endif %}
+            </td>
+            {% block row %}{% endblock %}
+            <td class="text-end text-nowrap">{% if e.duration_s %}{{ e.duration_s|floatformat:0 }} s{% endif %}</td>
+            <td class="small">{{ e.reason|default:"" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if run.dry_run and not run.running and run.selectable %}
+    <div class="card-footer border border-danger d-flex flex-wrap align-items-center gap-3">
+      <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" name="confirm" value="yes" id="lens-rb-confirm">
+        <label class="form-check-label" for="lens-rb-confirm">{% block confirm %}{% endblock %}</label>
+      </div>
+      <button type="submit" name="action" value="apply_selected" class="btn btn-danger" id="lens-rb-apply" disabled>
+        <i class="mdi mdi-check-decagram" aria-hidden="true"></i> {% trans "Apply to selected" %} (<span id="lens-rb-count">0</span>)
+      </button>
+      <span class="text-muted small">{% block apply_note %}{% endblock %}</span>
+    </div>
+    {% endif %}
+  </form>
+</div>
+<script>
+(function () {
+  var all = document.getElementById("lens-rb-all"), picks = document.querySelectorAll("input.lens-rb-pick");
+  var confirm = document.getElementById("lens-rb-confirm"), apply = document.getElementById("lens-rb-apply");
+  var count = document.getElementById("lens-rb-count");
+  if (!apply) return;
+  function update() {
+    var n = Array.prototype.filter.call(picks, function (p) { return p.checked; }).length;
+    count.textContent = n;
+    apply.disabled = n === 0 || !confirm.checked;
+    if (all) { all.checked = n === picks.length && n > 0; all.indeterminate = n > 0 && n < picks.length; }
+  }
+  if (all) all.addEventListener("change", function () { picks.forEach(function (p) { p.checked = all.checked; }); update(); });
+  picks.forEach(function (p) { p.addEventListener("change", update); });
+  confirm.addEventListener("change", update);
+  update();
+})();
+</script>
+{% endif %}
+</div>

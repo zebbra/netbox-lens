@@ -1,0 +1,58 @@
+{% extends "netbox_lens/bulk_run_page.html" %}
+{% load i18n %}
+{% load lens_filters %}
+{% block title %}LENS – {% trans "SNMP Modulator" %}{% endblock %}
+{% block intro %}
+{% if run_unsupported %}
+{% blocktrans trimmed %}
+Sends one SNMP Modulator probe for all devices below: it tests the SNMP exporter modules per device and writes
+the working module and auth profile to NetBox. This modulator has no dry run yet, so it applies right away, in the
+background. Devices without an SNMP auth profile are skipped.
+{% endblocktrans %}
+{% else %}
+{% blocktrans trimmed with size=batch_size|default:20 %}
+Tests the SNMP exporter modules of the devices below in batches of {{ size }} and shows the old and new modules.
+One device at a time, usually 10–60 s each, in the background — you can leave this page. Start with a dry run, then
+apply the devices you tick in its result. Pinned devices, devices without an SNMP auth profile and offline ones are skipped.
+{% endblocktrans %}
+{% endif %}
+{% endblock %}
+{% block run_panel %}{% include "netbox_lens/bulk_modulator_run.html" %}{% endblock %}
+{% block actions %}
+{% if run_unsupported %}
+<form method="post" class="border border-danger rounded p-2 mb-3">
+  {% csrf_token %}
+  <input type="hidden" name="filter_qs" value="{{ filter_qs }}">
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" name="confirm" value="yes" id="lens-confirm" required>
+    <label class="form-check-label" for="lens-confirm">
+      {% blocktrans trimmed count counter=sendable %}
+      I am sure: probe {{ counter }} device and write the result to NetBox, without a dry run.
+      {% plural %}
+      I am sure: probe {{ counter }} devices and write the results to NetBox, without a dry run.
+      {% endblocktrans %}
+    </label>
+  </div>
+  <button type="submit" name="action" value="legacy" class="btn btn-danger btn-lg" id="lens-legacy-apply" disabled>
+    <i class="mdi mdi-alert-decagram" aria-hidden="true"></i>
+    {% blocktrans trimmed count counter=sendable %}Apply without dry run — {{ counter }} device{% plural %}Apply without dry run — {{ counter }} devices{% endblocktrans %}
+  </button>
+</form>
+<script>
+(function () {
+  var c = document.getElementById("lens-confirm"), b = document.getElementById("lens-legacy-apply");
+  if (c && b) c.addEventListener("change", function () { b.disabled = !c.checked; });
+})();
+</script>
+{% else %}{{ block.super }}{% endif %}
+{% endblock %}
+{% block head %}
+<th data-sort-type="text">{% trans "SNMP module" %}</th>
+<th data-sort-type="text">{% trans "Auth profile" %}</th>
+<th data-sort-type="text">{% trans "Last modulated" %}</th>
+{% endblock %}
+{% block row %}
+<td class="small">{% if r.module %}{% if r.module|stringformat:"s"|slice:":1" == "[" %}{{ r.module|join:", " }}{% else %}{{ r.module }}{% endif %}{% else %}—{% endif %}</td>
+<td>{% if r.auth %}{{ r.auth }}{% else %}<span class="text-warning" title="{% trans 'No auth profile: the modulator skips this device' %}">—</span>{% endif %}</td>
+<td data-sort="{{ r.last|default:'' }}"><span title="{{ r.last|lens_absolute }}">{{ r.last|lens_relative|default:"—" }}</span></td>
+{% endblock %}

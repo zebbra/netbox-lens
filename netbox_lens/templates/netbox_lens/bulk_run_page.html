@@ -1,0 +1,102 @@
+{% extends 'generic/_base.html' %}
+{% load i18n %}
+{% load lens_filters %}
+{# Base of a bulk run page (Bulk Rebuild, Bulk SNMP Modulator): batches, dry run, then apply. #}
+
+{% block content %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-information-outline" aria-hidden="true"></i> {% block intro %}{% endblock %}
+</div>
+{% include "netbox_lens/bulk_header.html" %}
+
+{% block run_panel %}{% endblock %}
+
+{% include "netbox_lens/bulk_pinned_note.html" %}
+{% if no_ip_count %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-alert-outline text-warning" aria-hidden="true"></i>
+  {% blocktrans trimmed count counter=no_ip_count %}
+  {{ counter }} device left out: no primary IPv4 (see Refresh IPs).
+  {% plural %}
+  {{ counter }} devices left out: no primary IPv4 (see Refresh IPs).
+  {% endblocktrans %}
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger"><i class="mdi mdi-alert" aria-hidden="true"></i> {{ error }}</div>
+{% elif too_many %}
+<div class="alert alert-warning">
+  {% blocktrans trimmed %}More than {{ too_many }} devices match. Narrow the filter (e.g. by site or role).{% endblocktrans %}
+</div>
+{% elif not matched %}
+<div class="text-muted">{% trans "No devices with a primary IPv4 match this filter." %}</div>
+{% else %}
+{% block actions %}
+{% if run.running %}
+<div class="text-muted small mb-2"><i class="mdi mdi-timer-sand" aria-hidden="true"></i> {% trans "A run is going: the next batch can start when it is done." %}</div>
+{% elif run_error %}
+{% elif batch_count %}
+<form method="post" class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  {% csrf_token %}
+  <input type="hidden" name="filter_qs" value="{{ filter_qs }}">
+  <input type="hidden" name="batch" value="{{ batch_ids }}">
+  <button type="submit" name="action" value="preview" class="btn btn-primary btn-sm">
+    <i class="mdi mdi-eye-check-outline" aria-hidden="true"></i>
+    {% if run %}{% blocktrans trimmed count counter=batch_count %}Dry run next batch ({{ counter }} device){% plural %}Dry run next batch ({{ counter }} devices){% endblocktrans %}
+    {% else %}{% blocktrans trimmed count counter=batch_count %}Dry run ({{ counter }} device){% plural %}Dry run ({{ counter }} devices){% endblocktrans %}{% endif %}
+  </button>
+  <span class="text-muted small">
+    {% blocktrans trimmed with m=batch_eta_min %}about {{ m }} min{% endblocktrans %}{% if pending_count > batch_count %} · {% blocktrans trimmed with n=pending_count %}{{ n }} still to do{% endblocktrans %}{% endif %}
+  </span>
+  {% if can_direct %}
+  <span class="ms-auto d-flex flex-wrap align-items-center gap-2 border border-danger rounded px-2 py-1">
+    <input class="form-check-input mt-0" type="checkbox" name="confirm" value="yes" id="lens-direct-confirm">
+    <label class="form-check-label small" for="lens-direct-confirm">{% trans "I am sure, no dry run" %}</label>
+    <button type="submit" name="action" value="apply_batch" class="btn btn-danger btn-sm" id="lens-direct-apply" disabled
+            title="{% trans 'Run this batch for real right away, without a preview (admin)' %}">
+      <i class="mdi mdi-alert-decagram" aria-hidden="true"></i> {% trans "Apply without dry run" %}
+    </button>
+  </span>
+  {% endif %}
+</form>
+{% else %}
+<div class="text-success small mb-2"><i class="mdi mdi-check-all" aria-hidden="true"></i> {% trans "Every device of this filter was in a run." %}</div>
+{% endif %}
+{% endblock %}
+
+<div class="table-responsive">
+  <table class="table table-hover table-headings mb-0 lens-sortable">
+    <thead>
+      <tr>
+        <th data-sort-type="text">{% trans "Device" %}</th>
+        <th data-sort-type="text">{% trans "Primary IPv4" %}</th>
+        <th data-sort-type="text">{% trans "Role" %}</th>
+        <th data-sort-type="text">{% trans "Site" %}</th>
+        {% block head %}{% endblock %}
+        <th data-sort-type="text">{% trans "Batch" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr{% if r.handled or r.pinned %} class="text-muted"{% endif %}>
+        <td><a href="{{ r.url }}">{{ r.name }}</a>{% if r.pinned %} <span class="badge text-bg-dark" title="{% blocktrans with tag=pin_tag %}Tagged {{ tag }}: left out{% endblocktrans %}"><i class="mdi mdi-pin" aria-hidden="true"></i> {% trans "pinned" %}</span>{% endif %}</td>
+        <td>{{ r.ip }}</td>
+        <td>{{ r.role|default:"—" }}</td>
+        <td>{{ r.site|default:"—" }}</td>
+        {% block row %}{% endblock %}
+        <td>{% if r.handled %}<span class="badge text-bg-secondary">{% trans "in last run" %}</span>{% elif r.in_batch and not run.running and not run_error %}<span class="badge text-bg-primary">{% trans "next" %}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>
+(function () {
+  var c = document.getElementById("lens-direct-confirm"), b = document.getElementById("lens-direct-apply");
+  if (c && b) c.addEventListener("change", function () { b.disabled = !c.checked; });
+})();
+</script>
+{% endif %}
+{% include "netbox_lens/sortable_table.html" %}
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "netbox_lens/bulk_run_panel.html" %}
+{% load i18n %}
+{% block head %}
+<th>{% trans "Old modules" %}</th>
+<th>{% trans "New modules" %}</th>
+<th>{% trans "Auth profile" %}</th>
+{% if not run.dry_run %}<th>{% trans "Source" %}</th>{% endif %}
+{% endblock %}
+{% block row %}
+<td class="small">{{ e.previous_modules|join:", "|default:"—" }}</td>
+<td class="small">
+  {% if e.status == "ok" %}
+    {% if e.changed %}
+      {% for m in e.final_modules %}{% if m in e.added %}<strong class="text-success">+{{ m }}</strong>{% else %}{{ m }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+      {% for m in e.removed %}<span class="text-danger text-decoration-line-through ms-1">{{ m }}</span>{% endfor %}
+    {% else %}<span class="text-muted">{% trans "unchanged" %}</span>{% endif %}
+  {% endif %}
+</td>
+<td class="small">{% if e.auth_profile_new and e.auth_profile_new != e.auth_profile_old %}{{ e.auth_profile_old|default:"—" }} → <strong>{{ e.auth_profile_new }}</strong>{% else %}{{ e.auth_profile_old|default:"" }}{% endif %}</td>
+{% if not run.dry_run %}<td class="small">{% if e.source == "cache" %}<span title="{% trans 'Committed from the dry run, not probed again' %}">{% trans "dry run" %}</span>{% elif e.source %}{% trans "probe" %}{% endif %}</td>{% endif %}
+{% endblock %}
+{% block confirm %}{% trans "I am sure: write the new modules and auth profile of the selected devices to NetBox." %}{% endblock %}
+{% block apply_note %}{% trans "Applied within 30 min of the dry run and unchanged in NetBox since, a device is committed from the dry run; otherwise it is probed again." %}{% endblock %}

@@ -1,0 +1,11 @@
+{% load i18n %}
+{% if pinned_count %}
+<div class="text-muted small mb-2">
+  <i class="mdi mdi-pin" aria-hidden="true"></i>
+  {% blocktrans trimmed count counter=pinned_count with tag=pin_tag %}
+  {{ counter }} device left out: tagged {{ tag }} (pinned, never sent).
+  {% plural %}
+  {{ counter }} devices left out: tagged {{ tag }} (pinned, never sent).
+  {% endblocktrans %}
+</div>
+{% endif %}

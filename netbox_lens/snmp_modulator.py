@@ -110,3 +110,91 @@ def stats(config):
         return True, data, None
     except requests.exceptions.RequestException as exc:
         return False, None, str(exc)
+
+
+def probe_devices(config, device_ids):
+    """
+    Call snmp-modulator's /probe/netbox with the given NetBox device ids (sent
+    as id filters): queues one background probe over exactly those devices
+    and returns at once — {"status": "queued"|"skipped", "filter", "reason"?}.
+    It runs in the server's own mode (MODULATOR_DRY_RUN; false in our
+    deployments, so it writes the resolved module/auth profile to NetBox).
+    Devices without the auth-profile CF are skipped by the modulator.
+
+    Returns (ok, data, error).
+    """
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "SNMP Modulator URL is not configured."
+    headers = {"Accept": "application/json"}
+    token = config.get("token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = requests.post(
+            f"{base_url}/probe/netbox",
+            headers=headers,
+            params=[("id", str(i)) for i in device_ids],
+            timeout=config.get("timeout", 30),
+            verify=config.get("verify_ssl", True),
+        )
+        resp.raise_for_status()
+        data = resp.json() if resp.content else {}
+        return True, data, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)
+
+
+def _probe_run(config, method, params=None):
+    """One call to snmp-modulator's /probe/run (bulk probe with dry run).
+    Returns (ok, data, error); a 404 on GET means this modulator has no
+    /probe/run yet, flagged in data as {"unsupported": True}."""
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "SNMP Modulator URL is not configured."
+    headers = {"Accept": "application/json"}
+    token = config.get("token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = requests.request(
+            method, f"{base_url}/probe/run", headers=headers, params=params or [],
+            timeout=config.get("status_timeout", 15), verify=config.get("verify_ssl", True),
+        )
+        if resp.status_code == 404 and method == "GET":
+            return False, {"unsupported": True}, "This SNMP Modulator has no bulk probe run yet."
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+                reason = body.get("detail") or body.get("error") or body.get("reason")
+            except ValueError:
+                reason = None
+            if resp.status_code == 409:
+                reason = reason or "A bulk probe is already running."
+            return False, None, reason or f"HTTP {resp.status_code} from SNMP Modulator"
+        return True, resp.json() if resp.content else {}, None
+    except requests.exceptions.RequestException as exc:
+        return False, None, str(exc)
+
+
+def probe_run_start(config, device_ids, dry_run=True):
+    """POST /probe/run for these NetBox device ids: one run, one device after
+    the other, capped at the modulator's max_devices (the rest is over_limit).
+    Applying ids from a recent dry run commits its cached result."""
+    params = [("id", str(i)) for i in device_ids]
+    params.append(("dry_run", "true" if dry_run else "false"))
+    return _probe_run(config, "POST", params)
+
+
+def probe_run_status(config):
+    """GET /probe/run: the current or last run — status running|done|cancelled|
+    interrupted|none, dry_run, started, finished, max_devices, flat totals,
+    avg_duration_s, devices[{device_id, device_name, host, status, changed,
+    previous_modules, final_modules, auth_profile_old/new, reason, duration_s,
+    source}]."""
+    return _probe_run(config, "GET")
+
+
+def probe_run_cancel(config):
+    """DELETE /probe/run: drops the queued devices; the one running finishes."""
+    return _probe_run(config, "DELETE")

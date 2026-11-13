@@ -24,6 +24,11 @@ class LensConfig(PluginConfig):
         # Device role slugs Refresh IP never touches (single and bulk): APs
         # get their address from DHCP, a DNS/Netdisco lookup isn't theirs.
         "refresh_ip_exclude_roles": ["lwapp-ap"],
+        # NetBox tag slug per service: a device with it is left out of that
+        # service's bulk runs (Netdisco Sync, Rebuild Inventory / SNMP Modulator)
+        # and never sent there. snmp_modulator matches the modulator's own
+        # mapping.yaml pin_tag; empty disables it.
+        "pin_tags": {"discobox": "pin-inventory", "snmp_modulator": "pin-snmp"},
         # Time zone of timestamps that arrive without one (Netdisco's are UTC).
         "naive_timezone": "UTC",
     }

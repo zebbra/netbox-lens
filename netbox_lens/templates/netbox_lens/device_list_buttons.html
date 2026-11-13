@@ -9,5 +9,9 @@
       <i class="mdi mdi-ip-network" aria-hidden="true"></i> {% trans "Refresh IPs" %}</a></li>
     <li><a class="dropdown-item" href="{% url 'plugins:netbox_lens:bulk_sync' %}{% if lens_filter_qs %}?{{ lens_filter_qs }}{% endif %}">
       <i class="mdi mdi-sync" aria-hidden="true"></i> {% trans "Netdisco Sync" %}</a></li>
+    <li><a class="dropdown-item" href="{% url 'plugins:netbox_lens:bulk_rebuild' %}{% if lens_filter_qs %}?{{ lens_filter_qs }}{% endif %}">
+      <i class="mdi mdi-wrench-cog" aria-hidden="true"></i> {% trans "Rebuild Inventory" %}</a></li>
+    <li><a class="dropdown-item" href="{% url 'plugins:netbox_lens:bulk_modulator' %}{% if lens_filter_qs %}?{{ lens_filter_qs }}{% endif %}">
+      <i class="mdi mdi-tune-variant" aria-hidden="true"></i> {% trans "SNMP Modulator" %}</a></li>
   </ul>
 </div>

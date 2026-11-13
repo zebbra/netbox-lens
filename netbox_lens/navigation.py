@@ -63,6 +63,16 @@ menu = PluginMenu(
                     link_text=_("Netdisco Sync"),
                     permissions=["netbox_lens.trigger_lens"],
                 ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:bulk_rebuild",
+                    link_text=_("Rebuild Inventory"),
+                    permissions=["netbox_lens.trigger_lens"],
+                ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:bulk_modulator",
+                    link_text=_("SNMP Modulator"),
+                    permissions=["netbox_lens.trigger_lens"],
+                ),
             ),
         ),
         (
