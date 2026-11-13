@@ -10,12 +10,14 @@ from itertools import groupby
 
 from django.apps import apps
 from django.conf import settings
+from django.core.cache import cache
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.db.models import F, Q
 from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 from django.views import View
 from netbox.views.generic import ObjectView
@@ -687,7 +689,13 @@ def _bulk_presets(tab, current_qs):
 
 
 def _bulk_devices(request, params):
-    """(queryset, error) for a NetBox device filter, limited to what the user may view."""
+    """(queryset, error) for a NetBox device filter, limited to what the user may view.
+    limit=N (LENS's own, not a NetBox filter) keeps the first N by name."""
+    params = params.copy()
+    limit = params.pop("limit", None)
+    limit = limit[-1] if limit else None
+    if limit is not None and not (limit.isdigit() and int(limit) > 0):
+        return None, f"limit: a positive number, not {limit!r}"
     fs = DeviceFilterSet(params, queryset=NbDevice.objects.restrict(request.user, "view"))
     # a filterset ignores unknown keys, which would widen the filter to the whole fleet
     unknown = sorted(k for k in params if k not in fs.filters)
@@ -695,7 +703,10 @@ def _bulk_devices(request, params):
         return None, f"Unknown device filter: {', '.join(unknown)}"
     if not fs.is_valid():
         return None, "; ".join(f"{k}: {', '.join(v)}" for k, v in fs.errors.items())
-    return fs.qs, None
+    qs = fs.qs
+    if limit:
+        qs = qs.filter(pk__in=list(qs.order_by("name").values_list("pk", flat=True)[:int(limit)]))
+    return qs, None
 
 
 class LensRefreshIpsView(PermissionRequiredMixin, View):
@@ -852,11 +863,20 @@ def _run_context(ok, run, error, est_seconds, selectable):
 
 def _rebuild_run_context(config):
     ok, run, error = rebuild_all_status(config)
-    ctx = _run_context(ok, run, error, REBUILD_EST_SECONDS, lambda e: e.get("status") in ("ok", "blocked"))
+    def changes(e):
+        prune = e.get("prune") or {}
+        deletes = sum(prune.get(k) or 0 for k in ("interfaces_deleted", "modules_deleted", "inventory_deleted", "sfps_deleted"))
+        return deletes or prune.get("stack_members")
+
+    # applying is for what the dry run found: deletions or a stack count change.
+    # Blocked keeps its deletions when applied too, so there is nothing to apply.
+    ctx = _run_context(ok, run, error, REBUILD_EST_SECONDS, lambda e: e.get("status") == "ok" and changes(e))
     for e in (ctx.get("run") or {}).get("devices") or []:
         prune = e.get("prune") or {}
         e["deletes"] = sum(prune.get(k) or 0 for k in ("interfaces_deleted", "modules_deleted", "inventory_deleted", "sfps_deleted"))
-        e["preselect"] = e.get("status") == "ok"
+        e["preselect"] = e["selectable"]
+        if e.get("status") == "ok" and not changes(e) and not e.get("reason") and (ctx["run"] or {}).get("dry_run"):
+            e["reason"] = _("nothing to change")
         b = prune.get("blocked") or {}
         if b and not e.get("reason"):
             e["reason"] = _("brake: %(stale)s of %(total)s %(kind)s (%(percent)s%%) would go") % {
@@ -894,8 +914,46 @@ class _BulkRunView(PermissionRequiredMixin, View):
     def cancel(self, config):
         raise NotImplementedError
 
+    unknown_reason = None  # why the service dropped a device it was sent
+
     def config(self):
         return settings.PLUGINS_CONFIG.get("netbox_lens", {}).get(self.config_key, {})
+
+    def _sent_key(self):
+        return f"netbox_lens:bulk_sent:{self.config_key}"
+
+    def full_run_context(self):
+        """The service's run plus the devices LENS sent that the service dropped
+        without listing them (discobox: not in Netdisco), shown as "unknown" so
+        they leave the next batch instead of coming back forever."""
+        ctx = self.run_context(self.config())
+        sent = cache.get(self._sent_key())
+        if not sent or ctx.get("run_error") or sent.get("over_limit"):
+            return ctx
+        run = ctx.get("run")
+        if sent.get("status") == "running":
+            started = parse_datetime((run or {}).get("started") or "")
+            # only the run that this send started
+            if not run or not started or started < sent["at"] - timedelta(minutes=2):
+                return ctx
+        elif sent.get("status") != "none":
+            return ctx
+        elif run and (parse_datetime(run.get("started") or "") or sent["at"]) > sent["at"]:
+            return ctx  # nothing was queued, and a newer run came since
+        listed = {e.get("device_id") for e in (run or {}).get("devices") or []}
+        missing = [i for i in sent["ids"] if i not in listed]
+        if not missing:
+            return ctx
+        names = dict(NbDevice.objects.filter(pk__in=missing).values_list("pk", "name"))
+        unknown = [{"device_id": i, "hostname": names.get(i, f"#{i}"), "status": "unknown", "selectable": False,
+                    "url": f"/dcim/devices/{i}/", "reason": self.unknown_reason} for i in missing]
+        if run:
+            run["devices"] = list(run.get("devices") or []) + unknown
+        else:
+            ctx["run"] = {"status": "done", "dry_run": sent.get("dry_run"), "started": sent["at"].isoformat(),
+                          "devices": unknown, "total": len(unknown), "done": len(unknown), "running": False,
+                          "selectable": False}
+        return ctx
 
     def get(self, request):
         params = _refresh_ips_filter(request)
@@ -914,35 +972,38 @@ class _BulkRunView(PermissionRequiredMixin, View):
         context = {"filter_params": params, "filter_qs": params.urlencode(), "bulk_tab": self.tab,
                    "can_direct": request.user.is_superuser, "presets": _bulk_presets(self.tab, params.urlencode()),
                    "page_url": request.path, "run_url": request.path + "run/"}
-        context.update(self.run_context(self.config()))
+        context.update(self.full_run_context())
         devices, error = _bulk_devices(request, params)
         if error:
             context["error"] = error
             return context
         context["no_ip_count"] = devices.filter(primary_ip4__isnull=True).count()
-        rows = list(devices.filter(primary_ip4__isnull=False).select_related("primary_ip4", "role", "site")
-                    .order_by("name")[:REFRESH_IPS_MAX + 1])
-        context["matched"] = len(rows)
-        if len(rows) > REFRESH_IPS_MAX:
-            context["too_many"] = REFRESH_IPS_MAX
-            return context
+        with_ip = devices.filter(primary_ip4__isnull=False).select_related("primary_ip4", "role", "site").order_by("name")
         run = context.get("run") or {}
         # devices the last run handled (not the cancelled ones) wait for a later batch
         handled = {e.get("device_id") for e in run.get("devices") or [] if e.get("status") != "cancelled"}
         batch_size = run.get("max_devices") or self.batch_default
-        pinned = _pinned_ids(self.config_key, [d.pk for d in rows])
-        context.update({"pin_tag": _pin_tag(self.config_key), "pinned_count": len(pinned),
-                        "sendable": len(rows) - len(pinned)})
-        pending = [d for d in rows if d.pk not in handled and d.pk not in pinned]
-        batch = pending[:batch_size]
+        tag = _pin_tag(self.config_key)
+        unpinned = with_ip.exclude(tags__slug=tag) if tag else with_ip
+        total = with_ip.count()
+        pinned_count = total - unpinned.count()
+        pending = unpinned.exclude(pk__in=handled)
+        pending_count = pending.count()
+        batch = list(pending[:batch_size])
+        batch_ids = {d.pk for d in batch}
+        # it works batch by batch, so a big selection is fine: list it all only when it is small
+        listed = list(with_ip) if total <= REFRESH_IPS_MAX else batch
+        pinned = _pinned_ids(self.config_key, [d.pk for d in listed])
         context.update({
+            "matched": total, "list_capped": total > REFRESH_IPS_MAX, "list_max": REFRESH_IPS_MAX,
+            "pin_tag": tag, "pinned_count": pinned_count, "sendable": len([d for d in listed if d.pk not in pinned]),
             "rows": [{
                 "id": d.pk, "name": d.name, "url": d.get_absolute_url(), "ip": _device_ip(d),
                 "role": d.role.name if d.role else None, "site": d.site.name if d.site else None,
-                "in_batch": d in batch, "handled": d.pk in handled, "pinned": d.pk in pinned, **self.row_extra(d),
-            } for d in rows],
+                "in_batch": d.pk in batch_ids, "handled": d.pk in handled, "pinned": d.pk in pinned, **self.row_extra(d),
+            } for d in listed],
             "batch_ids": ",".join(str(d.pk) for d in batch), "batch_count": len(batch),
-            "pending_count": len(pending), "batch_size": batch_size,
+            "pending_count": pending_count, "batch_size": batch_size,
             "batch_eta_min": max(1, round(len(batch) * self.est_seconds / 60)) if batch else 0,
         })
         return context
@@ -983,6 +1044,9 @@ class _BulkRunView(PermissionRequiredMixin, View):
             messages.error(request, error)
             return back
         data = data or {}
+        cache.set(self._sent_key(), {"ids": ids, "at": timezone.now(), "dry_run": dry_run,
+                                     "status": data.get("status"), "over_limit": data.get("over_limit") or 0},
+                  timeout=7 * 86400)
         msg = (_("Dry run started for %(n)d devices.") if dry_run else _("Run started for %(n)d devices.")) % {"n": data.get("queued") or 0}
         extra = [f"{data[k]} {label}" for k, label in (
             ("over_limit", _("over the limit (next batch)")), ("not_in_netdisco", _("not in Netdisco")),
@@ -1001,7 +1065,7 @@ class _BulkRunPanelView(PermissionRequiredMixin, View):
         page = self.page()
         context = {"filter_qs": request.GET.get("filter_qs", ""), "run_url": request.path,
                    "page_url": request.path.removesuffix("run/")}
-        context.update(page.run_context(page.config()))
+        context.update(page.full_run_context())
         response = render(request, self.template, context)
         if not (context.get("run") or {}).get("running"):
             # the run just ended: reload the page so the batch and the device list catch up
@@ -1013,6 +1077,7 @@ class LensBulkRebuildView(_BulkRunView):
     """Bulk Rebuild: discobox's async /rebuild/all (2.5.0+)."""
     tab, template, config_key, last_cf = "rebuild", "netbox_lens/bulk_rebuild.html", "discobox", REBUILD_LAST_CF
     est_seconds, batch_default = REBUILD_EST_SECONDS, REBUILD_BATCH_DEFAULT
+    unknown_reason = "not in Netdisco: discobox doesn't know it"
 
     def run_context(self, config):
         return _rebuild_run_context(config)
@@ -1034,6 +1099,7 @@ class LensBulkModulatorView(_BulkRunView):
     /probe/netbox (server mode, no preview, no result)."""
     tab, template, config_key, last_cf = "modulator", "netbox_lens/bulk_modulator.html", "snmp_modulator", MODULATOR_LAST_CF
     est_seconds = MODULATOR_EST_SECONDS
+    unknown_reason = "not taken by the modulator"
 
     def run_context(self, config):
         return _modulator_run_context(config)

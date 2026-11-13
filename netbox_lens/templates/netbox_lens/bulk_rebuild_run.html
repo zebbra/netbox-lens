@@ -12,7 +12,7 @@
 <td class="text-end">{{ e.prune.modules_deleted|default_if_none:"" }}{% if e.prune.modules_skipped_foreign %} <span class="text-muted small" title="{% trans 'Kept: still has non-Netdisco interfaces' %}">(+{{ e.prune.modules_skipped_foreign }})</span>{% endif %}</td>
 <td class="text-end">{{ e.prune.inventory_deleted|default_if_none:"" }}</td>
 <td class="text-end">{{ e.prune.sfps_deleted|default_if_none:"" }}</td>
-<td>{% with sm=e.prune.stack_members %}{% if sm %}{{ sm.was|default:"—" }} → <strong>{% if sm.now is None %}{% trans "cleared" %}{% else %}{{ sm.now }}{% endif %}</strong>{% endif %}{% endwith %}</td>
+<td>{% with sm=e.prune.stack_members %}{% if sm %}{{ sm.was|default:"—" }} → <strong>{% if sm.now is None %}{% trans "cleared" %}{% else %}{{ sm.now }}{% endif %}</strong>{% elif e.status == "ok" or e.status == "blocked" %}<span class="text-muted">—</span>{% endif %}{% endwith %}</td>
 {% endblock %}
 {% block confirm %}{% trans "I am sure: rebuild the selected devices for real and delete what the preview shows." %}{% endblock %}
 {% block apply_note %}{% trans "Blocked devices are not preselected: applied, their deletions are skipped again. The preview can be hours old." %}{% endblock %}

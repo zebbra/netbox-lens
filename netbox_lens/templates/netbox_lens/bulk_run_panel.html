@@ -9,6 +9,7 @@
 {% elif run %}
 <div class="card mb-3">
   <div class="card-header d-flex flex-wrap align-items-center gap-2">
+    <i class="mdi mdi-clipboard-check-outline" aria-hidden="true"></i>
     <strong>{% if run.running %}{% trans "Running" %}{% elif run.status == "cancelled" %}{% trans "Cancelled" %}{% elif run.status == "interrupted" %}{% trans "Interrupted (service restarted)" %}{% else %}{% trans "Last run" %}{% endif %}</strong>
     {% if run.dry_run %}<span class="badge text-bg-warning">{% trans "Dry run" %}</span>{% else %}<span class="badge text-bg-danger">{% trans "Applied" %}</span>{% endif %}
     <span class="small">{% blocktrans trimmed with done=run.done total=run.total %}{{ done }} of {{ total }} done{% endblocktrans %}{% if run.running and run.eta_min %} · {% blocktrans trimmed with m=run.eta_min %}about {{ m }} min left{% endblocktrans %}{% endif %}</span>
@@ -47,7 +48,7 @@
         </thead>
         <tbody>
           {% for e in run.devices %}
-          <tr{% if e.status == "queued" or e.status == "cancelled" %} class="text-muted"{% endif %}>
+          <tr{% if e.status == "queued" or e.status == "cancelled" or e.status == "unknown" or not e.selectable and run.dry_run and not run.running %} class="text-muted"{% endif %}>
             {% if run.dry_run and not run.running and run.selectable %}
             <td>{% if e.selectable %}<input type="checkbox" class="form-check-input lens-rb-pick" name="device" value="{{ e.device_id }}"{% if e.preselect %} checked{% endif %}>{% endif %}</td>
             {% endif %}
@@ -60,6 +61,7 @@
               {% elif e.status == "error" %}<span class="badge text-bg-danger">error</span>
               {% elif e.status == "skipped" %}<span class="badge text-bg-secondary">{% trans "skipped" %}</span>
               {% elif e.status == "cancelled" %}<span class="badge text-bg-secondary">{% trans "cancelled" %}</span>
+              {% elif e.status == "unknown" %}<span class="badge text-bg-dark">{% trans "unknown" %}</span>
               {% else %}<span class="badge text-bg-light">{% trans "queued" %}</span>{% endif %}
             </td>
             {% block row %}{% endblock %}
@@ -80,6 +82,10 @@
         <i class="mdi mdi-check-decagram" aria-hidden="true"></i> {% trans "Apply to selected" %} (<span id="lens-rb-count">0</span>)
       </button>
       <span class="text-muted small">{% block apply_note %}{% endblock %}</span>
+    </div>
+    {% elif run.dry_run and not run.running and run.devices %}
+    <div class="card-footer text-muted small">
+      <i class="mdi mdi-check-circle-outline" aria-hidden="true"></i> {% trans "Nothing to apply: the dry run found nothing to change." %}
     </div>
     {% endif %}
   </form>
