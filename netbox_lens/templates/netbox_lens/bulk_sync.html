@@ -17,7 +17,7 @@
 <div class="card mb-3">
 <div class="card-header d-flex flex-wrap align-items-center gap-2">
   <i class="mdi mdi-format-list-checks" aria-hidden="true"></i> <strong>{% trans "Selection" %}</strong>
-  {% if matched %}<span class="text-muted small">{% blocktrans trimmed count counter=matched %}{{ counter }} device with a primary IPv4{% plural %}{{ counter }} devices with a primary IPv4{% endblocktrans %}</span>{% endif %}
+  {% if matched %}<span class="text-muted small">{% blocktrans trimmed count counter=matched %}{{ counter }} device to sync{% plural %}{{ counter }} devices to sync{% endblocktrans %}</span>{% endif %}
 </div>
 <div class="card-body pb-0">
 {% include "netbox_lens/bulk_pinned_note.html" %}
@@ -25,9 +25,9 @@
 <div class="text-muted small mb-2">
   <i class="mdi mdi-alert-outline text-warning" aria-hidden="true"></i>
   {% blocktrans trimmed count counter=no_ip_count %}
-  {{ counter }} device left out: no primary IPv4 (see Refresh IPs).
+  {{ counter }} device left out: no primary IPv4 and no WLC (see Refresh IPs).
   {% plural %}
-  {{ counter }} devices left out: no primary IPv4 (see Refresh IPs).
+  {{ counter }} devices left out: no primary IPv4 and no WLC (see Refresh IPs).
   {% endblocktrans %}
 </div>
 {% endif %}
@@ -55,6 +55,15 @@
   </button>
   {% endif %}
 </form>
+{% if wlcs %}
+<div class="small mb-2">
+  <i class="mdi mdi-access-point" aria-hidden="true"></i>
+  {% blocktrans trimmed count counter=via_wlc %}{{ counter }} AP without an IP syncs with its WLC:{% plural %}{{ counter }} APs without an IP sync with their WLC:{% endblocktrans %}
+  {% for w in wlcs %}
+  <a href="{{ w.url }}">{{ w.name }}</a> (<a href="{{ w.aps_url }}">{% blocktrans trimmed count counter=w.aps %}{{ counter }} AP{% plural %}{{ counter }} APs{% endblocktrans %}</a>){% if w.pinned %} <span class="badge text-bg-dark"><i class="mdi mdi-pin" aria-hidden="true"></i> {% trans "pinned" %}</span>{% endif %}{% if not forloop.last %}, {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
 <div class="table-responsive">
   <table class="table table-hover table-headings mb-0 lens-sortable">
     <thead>

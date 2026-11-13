@@ -19,6 +19,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
+from django.urls import reverse
 from django.views import View
 from netbox.views.generic import ObjectView
 from utilities.htmx import htmx_partial
@@ -507,8 +508,11 @@ def _ip_holders(entries):
         parent = getattr(owner, "device", None) or getattr(owner, "virtual_machine", None)
         holders[str(obj.address.ip)] = {
             "ip_url": obj.get_absolute_url(),
-            # discobox can move it only off a device interface, not a VM's
-            "movable": isinstance(owner, NbInterface) if NbInterface else False,
+            # discobox can move it only off a device interface, not a VM's,
+            # and never off a device whose IP is pinned
+            "movable": (isinstance(owner, NbInterface) if NbInterface else False)
+            and not (isinstance(parent, NbDevice) and _pinned_ids("refresh_ip", [parent.pk])),
+            "pinned": isinstance(parent, NbDevice) and bool(_pinned_ids("refresh_ip", [parent.pk])),
             "device": getattr(parent, "name", None),
             "device_url": parent.get_absolute_url() if parent else None,
             "interface": getattr(owner, "name", None),
@@ -550,6 +554,8 @@ class LensRefreshIpView(PermissionRequiredMixin, View):
             refusal = f"Refresh IP is disabled for role {device.role.slug}."
         elif _is_vc_non_master(device):
             refusal = "This device is a virtual chassis member; the chassis IP belongs on its master."
+        elif _pinned_ids("refresh_ip", [device.pk]):
+            refusal = f"The primary IP of this device is pinned (tag {_pin_tag('refresh_ip')}): Refresh IP leaves it alone."
         if refusal:
             return render(request, "netbox_lens/refresh_ip_modal.html", {
                 "device": device, "dry_run": dry_run, "error": refusal,
@@ -589,6 +595,7 @@ SYNC_STALE_DAYS = 30
 # Device CFs the SNMP modulator writes (Modulator bulk tab: column and presets).
 MODULATOR_LAST_CF = "snmp_modulator_last_updated"
 MODULATOR_MODULE_CF = "snmp_exporter_module"
+MODULATOR_AUTH_CF = "snmp_auth_profile"
 # Device CF discobox stamps after each applied rebuild (Bulk Rebuild column and presets).
 REBUILD_LAST_CF = "inventory_last_rebuild"
 # discobox's default rebuild.max_devices, until a run reports the real cap.
@@ -675,8 +682,9 @@ def _bulk_presets(tab, current_qs):
             (_("Never modulated"), qs(*base, *skip, (f"{last}__empty", "true"))) if has_last else None,
         ]
     else:
-        base = (("has_primary_ip", "true"), ("status", "active"))
-        skip = tuple(("role__n", r) for r in _existing_roles(_refresh_ip_excluded_roles()))
+        # no has_primary_ip and no AP exclusion: APs sync with their WLC
+        base = (("status", "active"),)
+        skip = ()
         stale = (timezone.localdate() - timedelta(days=SYNC_STALE_DAYS)).isoformat()
         presets += [
             (_("Switches"), qs(*base, ("role", "switch"))) if _existing_roles(["switch"]) else None,
@@ -737,6 +745,10 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
         context["excluded_count"] = devices.filter(role__slug__in=excluded).count()
         context["vc_member_count"] = qs.filter(VC_NON_MASTER).count()
         qs = qs.exclude(VC_NON_MASTER)
+        tag = _pin_tag("refresh_ip")
+        if tag:
+            context.update({"pin_tag": tag, "pinned_count": qs.filter(tags__slug=tag).count()})
+            qs = qs.exclude(tags__slug=tag)
         context["excluded_roles"] = excluded
         ids = list(qs.order_by("name").values_list("pk", flat=True)[:REFRESH_IPS_MAX + 1])
         context["matched"] = len(ids)
@@ -753,6 +765,7 @@ class LensRefreshIpsView(PermissionRequiredMixin, View):
         ids = list(NbDevice.objects.restrict(request.user, "view").filter(pk__in=ids[:REFRESH_IPS_MAX])
                    .exclude(role__slug__in=_refresh_ip_excluded_roles()).exclude(VC_NON_MASTER)
                    .values_list("pk", flat=True))
+        ids = [i for i in ids if i not in _pinned_ids("refresh_ip", ids)]
         context = {"filter_params": QueryDict(filter_qs), "filter_qs": filter_qs, "dry_run": False,
                    "matched": len(ids), "bulk_tab": "refresh_ips",
                    "presets": _bulk_presets("refresh_ips", filter_qs)}
@@ -798,27 +811,47 @@ class LensBulkSyncView(PermissionRequiredMixin, View):
         if error:
             context["error"] = error
             return context
-        context["no_ip_count"] = devices.filter(primary_ip4__isnull=True).count()
+        # APs have no IP of their own: discobox syncs them with their WLC (controller CF)
+        cf = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("wlc_controller_cf") or "controller"
+        no_ip = devices.filter(primary_ip4__isnull=True)
+        ap_ctrl = dict(no_ip.exclude(**{f"custom_field_data__{cf}__isnull": True})
+                       .values_list("pk", f"custom_field_data__{cf}"))
+        ap_count = {}
+        for ctrl in ap_ctrl.values():
+            if isinstance(ctrl, int):
+                ap_count[ctrl] = ap_count.get(ctrl, 0) + 1
+        wlcs = list(NbDevice.objects.restrict(request.user, "view")
+                    .filter(pk__in=ap_count, primary_ip4__isnull=False).select_related("primary_ip4").order_by("name"))
+        via_wlc = sum(ap_count[w.pk] for w in wlcs)
+        context["no_ip_count"] = no_ip.count() - via_wlc
         rows = list(devices.filter(primary_ip4__isnull=False).select_related("primary_ip4", "role", "site")
                     .order_by("name")[:REFRESH_IPS_MAX + 1])
         context["matched"] = len(rows)
         if len(rows) > REFRESH_IPS_MAX:
             context["too_many"] = REFRESH_IPS_MAX
         else:
-            pinned = _pinned_ids("discobox", [d.pk for d in rows])
-            context.update({"pin_tag": _pin_tag("discobox"), "pinned_count": len(pinned),
-                            "matched": len(rows) - len(pinned)})
+            pinned = _pinned_ids("discobox", [d.pk for d in rows] + [w.pk for w in wlcs])
+            row_ids = {d.pk for d in rows}
+            send = {d.pk for d in rows if d.pk not in pinned} | {w.pk for w in wlcs if w.pk not in pinned}
+            context.update({"pin_tag": _pin_tag("discobox"), "pinned_count": len(pinned & row_ids),
+                            "matched": len(send), "send_ids": sorted(send)})
             context["rows"] = [{
                 "id": d.pk, "name": d.name, "url": d.get_absolute_url(), "ip": _device_ip(d),
                 "role": d.role.name if d.role else None, "site": d.site.name if d.site else None,
                 "last_sync": d.cf.get("netdisco_last_update"), "pinned": d.pk in pinned,
             } for d in rows]
+            context["wlcs"] = [{
+                "id": w.pk, "name": w.name, "url": w.get_absolute_url(), "ip": _device_ip(w),
+                "aps": ap_count[w.pk], "pinned": w.pk in pinned, "in_rows": w.pk in row_ids,
+                "aps_url": f"{reverse('dcim:device_list')}?cf_{cf}={w.pk}",
+            } for w in wlcs]
+            context["via_wlc"] = via_wlc
         return context
 
     def post(self, request):
         params = QueryDict(request.POST.get("filter_qs", ""))
         context = self._context(request, params)
-        ids = [r["id"] for r in context.get("rows") or [] if not r["pinned"]]
+        ids = context.get("send_ids") or []
         if context.get("error") or not ids:
             context.setdefault("error", "No devices to sync.")
             return render(request, "netbox_lens/bulk_sync.html", context)
@@ -965,6 +998,12 @@ class _BulkRunView(PermissionRequiredMixin, View):
             return redirect(f"{request.path}?{params.urlencode()}")
         return render(request, self.template, self._context(request, params))
 
+    ineligible_label = None  # why a device the service can't take is left out
+
+    def eligible(self, qs):
+        """The devices of qs this service can take at all (beyond an IP)."""
+        return qs
+
     def row_extra(self, device):
         return {"last": device.cf.get(self.last_cf)}
 
@@ -987,20 +1026,27 @@ class _BulkRunView(PermissionRequiredMixin, View):
         unpinned = with_ip.exclude(tags__slug=tag) if tag else with_ip
         total = with_ip.count()
         pinned_count = total - unpinned.count()
-        pending = unpinned.exclude(pk__in=handled)
+        eligible = self.eligible(unpinned)
+        context["ineligible_count"] = unpinned.count() - eligible.count()
+        pending = eligible.exclude(pk__in=handled)
         pending_count = pending.count()
         batch = list(pending[:batch_size])
         batch_ids = {d.pk for d in batch}
         # it works batch by batch, so a big selection is fine: list it all only when it is small
         listed = list(with_ip) if total <= REFRESH_IPS_MAX else batch
         pinned = _pinned_ids(self.config_key, [d.pk for d in listed])
+        listed_ids = [d.pk for d in listed]
+        ineligible_ids = set(listed_ids) - set(self.eligible(with_ip.filter(pk__in=listed_ids)).values_list("pk", flat=True))
         context.update({
             "matched": total, "list_capped": total > REFRESH_IPS_MAX, "list_max": REFRESH_IPS_MAX,
-            "pin_tag": tag, "pinned_count": pinned_count, "sendable": len([d for d in listed if d.pk not in pinned]),
+            "pin_tag": tag, "pinned_count": pinned_count, "ineligible_label": self.ineligible_label,
+            "sendable": eligible.count() if total > REFRESH_IPS_MAX else
+            len(set(eligible.filter(pk__in=[d.pk for d in listed]).values_list("pk", flat=True))),
             "rows": [{
                 "id": d.pk, "name": d.name, "url": d.get_absolute_url(), "ip": _device_ip(d),
                 "role": d.role.name if d.role else None, "site": d.site.name if d.site else None,
-                "in_batch": d.pk in batch_ids, "handled": d.pk in handled, "pinned": d.pk in pinned, **self.row_extra(d),
+                "in_batch": d.pk in batch_ids, "handled": d.pk in handled, "pinned": d.pk in pinned,
+                "ineligible": d.pk in ineligible_ids, **self.row_extra(d),
             } for d in listed],
             "batch_ids": ",".join(str(d.pk) for d in batch), "batch_count": len(batch),
             "pending_count": pending_count, "batch_size": batch_size,
@@ -1036,6 +1082,7 @@ class _BulkRunView(PermissionRequiredMixin, View):
         # only devices this user may see and that are not pinned, whatever the form sent
         ids = list(NbDevice.objects.restrict(request.user, "view").filter(pk__in=ids).values_list("pk", flat=True))
         ids = [i for i in ids if i not in _pinned_ids(self.config_key, ids)]
+        ids = list(self.eligible(NbDevice.objects.filter(pk__in=ids)).values_list("pk", flat=True))
         if not ids:
             messages.error(request, _("No devices selected."))
             return back
@@ -1110,9 +1157,17 @@ class LensBulkModulatorView(_BulkRunView):
     def cancel(self, config):
         return probe_run_cancel(config)
 
+    ineligible_label = "no SNMP auth profile"
+
+    def eligible(self, qs):
+        # the modulator needs an SNMP auth profile to probe with
+        key = f"custom_field_data__{MODULATOR_AUTH_CF}"
+        # a missing key, JSON null (set when the CF was added) or ""
+        return qs.exclude(**{f"{key}__isnull": True}).exclude(**{key: None}).exclude(**{key: ""})
+
     def row_extra(self, device):
         return {"last": device.cf.get(MODULATOR_LAST_CF), "module": device.cf.get(MODULATOR_MODULE_CF),
-                "auth": device.cf.get("snmp_auth_profile")}
+                "auth": device.cf.get(MODULATOR_AUTH_CF)}
 
     def post(self, request):
         if request.POST.get("action") != "legacy":
@@ -1123,7 +1178,7 @@ class LensBulkModulatorView(_BulkRunView):
             messages.error(request, _("Tick the confirmation first."))
             return redirect(f"{request.path}?{filter_qs}")
         context = self._context(request, QueryDict(filter_qs))
-        ids = [r["id"] for r in context.get("rows") or [] if not r["pinned"]]
+        ids = [r["id"] for r in context.get("rows") or [] if not r["pinned"] and not r["ineligible"]]
         if not ids:
             messages.error(request, context.get("error") or _("No devices to probe."))
         else:
