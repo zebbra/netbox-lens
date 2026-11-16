@@ -198,3 +198,27 @@ def probe_run_status(config):
 def probe_run_cancel(config):
     """DELETE /probe/run: drops the queued devices; the one running finishes."""
     return _probe_run(config, "DELETE")
+
+
+def rules(config):
+    """GET /rules: the modulator's loaded mapping.yaml as JSON — field names,
+    policies, defaults and every rule {name, match, modules{add, try, block,
+    interval, timeout, fast{...}}, auth, on_success, on_fail}.
+
+    Returns (ok, data, error)."""
+    base_url = config.get("url", "").rstrip("/")
+    if not base_url:
+        return False, None, "SNMP Modulator URL is not configured."
+    headers = {"Accept": "application/json"}
+    token = config.get("token", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = requests.get(
+            f"{base_url}/rules", headers=headers,
+            timeout=config.get("status_timeout", 15), verify=config.get("verify_ssl", True),
+        )
+        resp.raise_for_status()
+        return True, resp.json() if resp.content else {}, None
+    except (requests.exceptions.RequestException, ValueError) as exc:
+        return False, None, str(exc)

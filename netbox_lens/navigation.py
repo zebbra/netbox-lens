@@ -83,6 +83,11 @@ menu = PluginMenu(
                     link_text=_("Backend"),
                     permissions=["netbox_lens.use_lens"],
                 ),
+                PluginMenuItem(
+                    link="plugins:netbox_lens:modulator_rules",
+                    link_text=_("SNMP Modulator Rules"),
+                    permissions=["netbox_lens.use_lens"],
+                ),
             ),
         ),
     ),

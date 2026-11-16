@@ -42,6 +42,7 @@ from .snmp_modulator import stats as snmp_modulator_stats
 from .snmp_modulator import probe as snmp_modulator_probe
 from .snmp_modulator import probe_devices as snmp_modulator_probe_devices
 from .snmp_modulator import probe_run_cancel, probe_run_start, probe_run_status
+from .snmp_modulator import rules as snmp_modulator_rules
 
 try:
     from dcim.models import Device as NbDevice
@@ -268,6 +269,117 @@ def _enrich_arp_history(rows):
         if d:
             r["nb_device_url"] = d.get_absolute_url()
             r["area"] = d.cf.get("service_group")
+
+
+# Readable labels for the modulator's match keys (dotted paths on the device).
+_RULE_MATCH_LABELS = {
+    "device_type.manufacturer.slug": "Manufacturer",
+    "device_type.model": "Model",
+    "device_type.slug": "Device type",
+    "device_type.part_number": "Part number",
+    "role.slug": "Role",
+    "platform.slug": "Platform",
+    "site.slug": "Site",
+    "site.region.slug": "Region",
+    "name": "Name",
+    "tags": "Tag",
+}
+
+
+def _rule_match_label(key):
+    if key.startswith("custom_fields."):
+        return key.split(".", 1)[1]
+    return _RULE_MATCH_LABELS.get(key, key)
+
+
+_RULE_LITERAL = re.compile(r"^[\w\-/ ]+(\|[\w\-/ ]+)*$")
+
+
+def _rule_values(v):
+    """Match values as (text, regex?) — plain alternations ("ani|ana") become
+    a list of plain values, anything else stays a regex."""
+    out = []
+    for x in v if isinstance(v, list) else [v]:
+        x = "" if x is None else str(x)
+        if _RULE_LITERAL.match(x):
+            out += [(p, False) for p in x.split("|")]
+        else:
+            out.append((x, True))
+    return out
+
+
+def _rule_modules(m):
+    """{add, try, block} lists of one modules section (normal or fast)."""
+    m = m or {}
+    return {k: list(m.get(k) or []) for k in ("add", "try", "block")}
+
+
+def _rule_polling(m):
+    m = m or {}
+    if m.get("interval") or m.get("timeout"):
+        return f"{m.get('interval') or '—'} / {m.get('timeout') or '—'}"
+    return ""
+
+
+def _rule_auth(auth):
+    """("try", [profiles]) / ("use", profile or None = no SNMP) / None."""
+    if not auth:
+        return None
+    if "use" in auth:
+        return {"kind": "use", "profiles": [auth["use"]] if auth["use"] else []}
+    return {"kind": "try", "profiles": list(auth.get("try") or [])}
+
+
+def _rule_hooks(rule):
+    out = []
+    for when in ("on_success", "on_fail"):
+        h = rule.get(when) or {}
+        for key, sign in (("add_tag", "+"), ("remove_tag", "−")):
+            out += [f"{when.replace('_', ' ')}: {sign}{t}" for t in h.get(key) or []]
+        out += [f"{when.replace('_', ' ')}: notify {n}" for n in h.get("notify") or []]
+    return out
+
+
+class LensModulatorRulesView(PermissionRequiredMixin, View):
+    """The snmp-modulator's rules (GET /rules) as a readable table, for users
+    without access to the modulator itself."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request):
+        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
+        ok, data, error = snmp_modulator_rules(config)
+        rows, info = [], None
+        if ok:
+            data = data or {}
+            for i, r in enumerate(data.get("rules") or [], 1):
+                mods = r.get("modules") or {}
+                rows.append({
+                    "n": i,
+                    "name": r.get("name") or f"#{i}",
+                    "match": [(_rule_match_label(k), k, _rule_values(v))
+                              for k, v in (r.get("match") or {}).items()],
+                    "normal": _rule_modules(mods),
+                    "fast": _rule_modules(mods.get("fast")),
+                    "polling": _rule_polling(mods),
+                    "polling_fast": _rule_polling(mods.get("fast")),
+                    "auth": _rule_auth(r.get("auth")),
+                    "hooks": _rule_hooks(r),
+                })
+            defaults = data.get("defaults") or {}
+            info = {
+                "defaults": _rule_modules(defaults.get("modules")),
+                "default_auth": _rule_auth(defaults.get("auth")),
+                "module_field": data.get("module_field"),
+                "fast_module_field": data.get("fast_module_field"),
+                "module_policy": data.get("module_policy"),
+                "auth_policy": data.get("auth_policy"),
+                "polling": f"{data.get('default_interval') or '—'} / {data.get('default_timeout') or '—'}",
+                "polling_fast": f"{data.get('fast_default_interval') or '—'} / {data.get('fast_default_timeout') or '—'}",
+                "pin_tag": data.get("pin_tag") or _pin_tag("snmp_modulator"),
+            }
+        return render(request, "netbox_lens/modulator_rules.html", {
+            "rows": rows, "info": info, "error": None if ok else error,
+        })
 
 
 class LensStatusView(PermissionRequiredMixin, View):
