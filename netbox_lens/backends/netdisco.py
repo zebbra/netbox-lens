@@ -420,6 +420,31 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
+    def find_clients(self, query: str, partial: bool = True) -> list:
+        """The ARP entries ({mac, ip, dns}) matching a client IP/hostname query."""
+        base_url = self.config.get("url", "").rstrip("/")
+        if not base_url:
+            return []
+        try:
+            resp = requests.get(
+                f"{base_url}/api/v1/search/node",
+                headers={
+                    "Authorization": f"Bearer {self._viewer_token()}",
+                    "Accept": "application/json",
+                },
+                params={"q": query, "partial": "true" if partial else "false", "deviceports": "false", "archived": "true"},
+                timeout=self.config.get("timeout", 15),
+                verify=self.config.get("verify_ssl", True),
+            )
+            resp.raise_for_status()
+            data = resp.json() if resp.content else {}
+            if not isinstance(data, dict):
+                return []
+            return [{"mac": m.get("mac"), "ip": m.get("ip"), "dns": m.get("dns")}
+                    for m in (data.get("macs") or []) + (data.get("ips") or []) if m.get("mac")]
+        except Exception:
+            return []
+
     def arp_entries(
         self, query: str, partial: bool = False,
         since: str | None = None, until: str | None = None,
@@ -484,10 +509,18 @@ class NetdiscoBackend(LensBackend):
             data = resp.json() if resp.content else {}
             if not isinstance(data, dict):
                 return None
-            entry = (data.get("macs") or data.get("ips") or [None])[0]
-            if not entry:
+            entries = [e for e in (data.get("macs") or data.get("ips") or []) if e]
+            if not entries:
                 return None
-            return {"ip": entry.get("ip"), "dns": entry.get("dns")}
+            # a MAC can have several ARP entries (e.g. VMware MACs reused across
+            # vCenters/VRFs): the active, most recent one first, the rest as others
+            entries.sort(key=lambda e: (bool(e.get("active")), e.get("time_last") or ""), reverse=True)
+            seen, others = {entries[0].get("ip")}, []
+            for e in entries[1:]:
+                if e.get("ip") and e.get("ip") not in seen:
+                    seen.add(e.get("ip"))
+                    others.append({"ip": e.get("ip"), "dns": e.get("dns")})
+            return {"ip": entries[0].get("ip"), "dns": entries[0].get("dns"), "others": others}
         except Exception:
             return None
 

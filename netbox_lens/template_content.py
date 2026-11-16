@@ -329,7 +329,6 @@ def device_panel_context(device, user):
         "lens_netdisco_last_update": device.cf.get("netdisco_last_update"),
         # set by discobox after each applied /rebuild (never on dry run or a plain sync)
         "lens_inventory_last_rebuild": device.cf.get("inventory_last_rebuild"),
-        "lens_snmp_modulator_last_updated": device.cf.get("snmp_modulator_last_updated"),
     }
 
 
@@ -397,16 +396,24 @@ def interface_port_context(iface):
             "lens_device_name": getattr(iface.device, "name", None)}
 
 
-def interface_nodes_context(iface):
-    """Active nodes on one interface — the interface panel's "MACs",
-    loaded on request by LensInterfaceNodesDataView."""
+def interface_nodes_context(iface, history=False):
+    """Nodes on one interface — the interface panel's "MACs", loaded on
+    request by LensInterfaceNodesDataView. history: every MAC Netdisco still
+    keeps for the port (also long gone ones), newest first."""
     ip = _device_ip(iface.device)
     backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
     nodes = []
-    if backends:
+    truncated = False
+    if backends and history:
+        nodes = [dict(n) for n in _device_nodes(backends, ip, port=iface.name, since=HISTORY_SINCE)]
+        nodes.sort(key=lambda n: n.get("time_last") or "", reverse=True)
+        truncated = len(nodes) > MAX_HISTORY_NODES
+        nodes = nodes[:MAX_HISTORY_NODES]
+    elif backends:
         nodes = [dict(n) for n in _device_nodes(backends, ip, port=iface.name) if n.get("active")]
+    if backends:
         # client IP/name from ARP, where some router has resolved the MAC
-        macs = sorted({n["mac"] for n in nodes if n.get("mac")})[:MAX_RESOLVED_MACS]
+        macs = list(dict.fromkeys(n["mac"] for n in nodes if n.get("mac")))[:MAX_RESOLVED_MACS]  # newest first in history
         with ThreadPoolExecutor() as executor:
             clients = dict(zip(macs, executor.map(lambda mac: _resolve_mac(backends, mac), macs)))
         for n in nodes:
@@ -416,8 +423,13 @@ def interface_nodes_context(iface):
     return {
         "lens_nodes": nodes, "lens_device_ip": ip, "lens_port": iface.name,
         "lens_device_name": getattr(iface.device, "name", None),
+        "lens_history": history, "lens_truncated": truncated, "lens_max": MAX_HISTORY_NODES,
     }
 
+
+# Port history: everything Netdisco keeps (its node expiry decides how far back).
+HISTORY_SINCE = "2000-01-01"
+MAX_HISTORY_NODES = 500
 
 # An access port has a handful of MACs; cap the per-MAC ARP lookups for
 # the odd port with hundreds (an uplink).

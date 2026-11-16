@@ -93,6 +93,10 @@ class LensBackend(ABC):
     def find_macs(self, query: str, partial: bool = True) -> list:
         return []
 
+    def find_clients(self, query: str, partial: bool = True) -> list:
+        """ARP entries [{mac, ip, dns}] for a client query; default: MACs only."""
+        return [{"mac": m, "ip": None, "dns": None} for m in self.find_macs(query, partial)]
+
     def arp_entries(
         self, query: str, partial: bool = False,
         since: str | None = None, until: str | None = None,

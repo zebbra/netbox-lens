@@ -39,7 +39,7 @@
     <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
     <strong>{% trans "LENS Detail" %}</strong>
     <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
-       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox. SNMP Modulator: writes polling config.' %}"></i>
+       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox.' %}"></i>
   </div>
   <div class="card-body">
     {% if not lens_found %}
@@ -206,30 +206,6 @@
               {% endif %}
             </td>
           </tr>
-          <tr>
-            <th scope="row" class="text-nowrap">{% trans "SNMP Modulator" %}</th>
-            <td><span title="{{ lens_snmp_modulator_last_updated|lens_absolute }}">{{ lens_snmp_modulator_last_updated|lens_relative|default:"—" }}</span></td>
-            <td class="text-end text-nowrap">
-              {% if lens_can_trigger %}
-              <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
-                      data-bs-target="#lens-probe-modal"
-                      hx-post="{% url 'plugins:netbox_lens:probe' pk=lens_device_pk %}"
-                      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                      hx-vals='{"dry_run": "true"}'
-                      hx-target="#lens-probe-body" hx-swap="innerHTML" hx-trigger="click once"
-                      title="{% trans 'Preview — dry run, nothing applied' %}">
-                <i class="mdi mdi-radar" aria-hidden="true"></i> {% trans "Preview" %}
-              </button>
-              <form method="post" action="{% url 'plugins:netbox_lens:update_modules' pk=lens_device_pk %}" class="d-inline">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-primary py-0 px-1"
-                        title="{% trans 'Apply now — runs in background' %}">
-                  <i class="mdi mdi-content-save-check" aria-hidden="true"></i>
-                </button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
         </table>
       </div>
     </div>
@@ -288,19 +264,6 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="lens-rebuild-body">
-        <div class="text-muted">{% trans "Loading preview…" %}</div>
-      </div>
-    </div>
-  </div>
-</div>
-<div class="modal fade" id="lens-probe-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">{% trans "SNMP Modulator" %}</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="lens-probe-body">
         <div class="text-muted">{% trans "Loading preview…" %}</div>
       </div>
     </div>

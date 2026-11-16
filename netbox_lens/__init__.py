@@ -5,7 +5,7 @@ class LensConfig(PluginConfig):
     name = "netbox_lens"
     verbose_name = "LENS"
     description = "Locate Endpoints across Network Systems"
-    version = "1.0.51"
+    version = "1.0.53"
     author = "Stefan Grosser"
     author_email = "stefan.grosser@zebbra.ch"
     base_url = "lens"
@@ -25,11 +25,10 @@ class LensConfig(PluginConfig):
         # get their address from DHCP, a DNS/Netdisco lookup isn't theirs.
         "refresh_ip_exclude_roles": ["lwapp-ap"],
         # NetBox tag slug per service: a device with it is left out of that
-        # service's bulk runs (Netdisco Sync, Rebuild Inventory / SNMP Modulator,
+        # service's bulk runs (Netdisco Sync, Rebuild Inventory,
         # Refresh IPs; for refresh_ip also the single Refresh IP and Move) and
-        # never sent there. snmp_modulator matches the modulator's own
-        # mapping.yaml pin_tag; empty disables it.
-        "pin_tags": {"discobox": "pin-inventory", "snmp_modulator": "pin-snmp", "refresh_ip": "pin-ip"},
+        # never sent there. Empty disables it.
+        "pin_tags": {"discobox": "pin-inventory", "refresh_ip": "pin-ip"},
         # Time zone of timestamps that arrive without one (Netdisco's are UTC).
         "naive_timezone": "UTC",
     }

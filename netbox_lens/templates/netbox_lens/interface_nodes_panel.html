@@ -11,6 +11,12 @@
             title="{% trans 'Active MACs on this port, with client IP and name from ARP' %}">
       <i class="mdi mdi-download" aria-hidden="true"></i> {% trans "Load" %}
     </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=lens_interface_pk %}?history=1"
+            hx-target="#lens-iface-macs" hx-swap="innerHTML" hx-indicator="#lens-macs-spinner"
+            title="{% trans 'Every MAC Netdisco still keeps for this port, also long gone ones, newest first' %}">
+      <i class="mdi mdi-history" aria-hidden="true"></i> {% trans "History" %}
+    </button>
   </div>
   <div id="lens-iface-macs"></div>
 </div>

@@ -37,12 +37,6 @@ from .interface_search import apply_live_status, apply_vm_oper_status, build_int
 from .template_content import apply_ap_radio_links, apply_transit_ports, device_node_stats, device_panel_context, device_panel_enabled, interface_nodes_context, interface_port_context
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
-from .snmp_modulator import health as snmp_modulator_health
-from .snmp_modulator import stats as snmp_modulator_stats
-from .snmp_modulator import probe as snmp_modulator_probe
-from .snmp_modulator import probe_devices as snmp_modulator_probe_devices
-from .snmp_modulator import probe_run_cancel, probe_run_start, probe_run_status
-from .snmp_modulator import rules as snmp_modulator_rules
 
 try:
     from dcim.models import Device as NbDevice
@@ -271,117 +265,6 @@ def _enrich_arp_history(rows):
             r["area"] = d.cf.get("service_group")
 
 
-# Readable labels for the modulator's match keys (dotted paths on the device).
-_RULE_MATCH_LABELS = {
-    "device_type.manufacturer.slug": "Manufacturer",
-    "device_type.model": "Model",
-    "device_type.slug": "Device type",
-    "device_type.part_number": "Part number",
-    "role.slug": "Role",
-    "platform.slug": "Platform",
-    "site.slug": "Site",
-    "site.region.slug": "Region",
-    "name": "Name",
-    "tags": "Tag",
-}
-
-
-def _rule_match_label(key):
-    if key.startswith("custom_fields."):
-        return key.split(".", 1)[1]
-    return _RULE_MATCH_LABELS.get(key, key)
-
-
-_RULE_LITERAL = re.compile(r"^[\w\-/ ]+(\|[\w\-/ ]+)*$")
-
-
-def _rule_values(v):
-    """Match values as (text, regex?) — plain alternations ("ani|ana") become
-    a list of plain values, anything else stays a regex."""
-    out = []
-    for x in v if isinstance(v, list) else [v]:
-        x = "" if x is None else str(x)
-        if _RULE_LITERAL.match(x):
-            out += [(p, False) for p in x.split("|")]
-        else:
-            out.append((x, True))
-    return out
-
-
-def _rule_modules(m):
-    """{add, try, block} lists of one modules section (normal or fast)."""
-    m = m or {}
-    return {k: list(m.get(k) or []) for k in ("add", "try", "block")}
-
-
-def _rule_polling(m):
-    m = m or {}
-    if m.get("interval") or m.get("timeout"):
-        return f"{m.get('interval') or '—'} / {m.get('timeout') or '—'}"
-    return ""
-
-
-def _rule_auth(auth):
-    """("try", [profiles]) / ("use", profile or None = no SNMP) / None."""
-    if not auth:
-        return None
-    if "use" in auth:
-        return {"kind": "use", "profiles": [auth["use"]] if auth["use"] else []}
-    return {"kind": "try", "profiles": list(auth.get("try") or [])}
-
-
-def _rule_hooks(rule):
-    out = []
-    for when in ("on_success", "on_fail"):
-        h = rule.get(when) or {}
-        for key, sign in (("add_tag", "+"), ("remove_tag", "−")):
-            out += [f"{when.replace('_', ' ')}: {sign}{t}" for t in h.get(key) or []]
-        out += [f"{when.replace('_', ' ')}: notify {n}" for n in h.get("notify") or []]
-    return out
-
-
-class LensModulatorRulesView(PermissionRequiredMixin, View):
-    """The snmp-modulator's rules (GET /rules) as a readable table, for users
-    without access to the modulator itself."""
-    permission_required = "netbox_lens.use_lens"
-
-    def get(self, request):
-        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
-        ok, data, error = snmp_modulator_rules(config)
-        rows, info = [], None
-        if ok:
-            data = data or {}
-            for i, r in enumerate(data.get("rules") or [], 1):
-                mods = r.get("modules") or {}
-                rows.append({
-                    "n": i,
-                    "name": r.get("name") or f"#{i}",
-                    "match": [(_rule_match_label(k), k, _rule_values(v))
-                              for k, v in (r.get("match") or {}).items()],
-                    "normal": _rule_modules(mods),
-                    "fast": _rule_modules(mods.get("fast")),
-                    "polling": _rule_polling(mods),
-                    "polling_fast": _rule_polling(mods.get("fast")),
-                    "auth": _rule_auth(r.get("auth")),
-                    "hooks": _rule_hooks(r),
-                })
-            defaults = data.get("defaults") or {}
-            info = {
-                "defaults": _rule_modules(defaults.get("modules")),
-                "default_auth": _rule_auth(defaults.get("auth")),
-                "module_field": data.get("module_field"),
-                "fast_module_field": data.get("fast_module_field"),
-                "module_policy": data.get("module_policy"),
-                "auth_policy": data.get("auth_policy"),
-                "polling": f"{data.get('default_interval') or '—'} / {data.get('default_timeout') or '—'}",
-                "polling_fast": f"{data.get('fast_default_interval') or '—'} / {data.get('fast_default_timeout') or '—'}",
-                "pin_tag": data.get("pin_tag") or _pin_tag("snmp_modulator"),
-            }
-        return render(request, "netbox_lens/modulator_rules.html", {
-            "rows": rows, "info": info, "error": None if ok else error,
-        })
-
-
 class LensStatusView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.use_lens"
 
@@ -389,24 +272,18 @@ class LensStatusView(PermissionRequiredMixin, View):
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
         backends = get_backends(config)
         discobox_config = config.get("discobox", {})
-        modulator_config = config.get("snmp_modulator", {})
 
         statuses = []
         with ThreadPoolExecutor() as executor:
             futures = {executor.submit(b.status): b for b in backends}
             futures[executor.submit(discobox_health, discobox_config)] = "discobox"
-            futures[executor.submit(snmp_modulator_health, modulator_config)] = "snmp_modulator"
 
             discobox_result = None
-            modulator_result = None
             for future in as_completed(futures):
                 tag = futures[future]
                 if tag == "discobox":
                     ok, data, error = future.result()
                     discobox_result = {"ok": ok, "data": data, "error": error}
-                elif tag == "snmp_modulator":
-                    ok, data, error = future.result()
-                    modulator_result = {"ok": ok, "data": data, "error": error}
                 else:
                     statuses.append(future.result())
 
@@ -417,21 +294,15 @@ class LensStatusView(PermissionRequiredMixin, View):
             stats_futures = {}
             if discobox_result and discobox_result["ok"]:
                 stats_futures[executor.submit(discobox_stats, discobox_config)] = "discobox"
-            if modulator_result and modulator_result["ok"]:
-                stats_futures[executor.submit(snmp_modulator_stats, modulator_config)] = "snmp_modulator"
             for future in as_completed(stats_futures):
                 tag = stats_futures[future]
                 ok, data, error = future.result()
                 result = {"ok": ok, "data": data, "error": error}
-                if tag == "discobox":
-                    discobox_result["stats"] = result
-                else:
-                    modulator_result["stats"] = result
+                discobox_result["stats"] = result
 
         return render(request, "netbox_lens/status.html", {
             "statuses": statuses,
             "discobox_health": discobox_result,
-            "snmp_modulator_health": modulator_result,
             "lens_can_trigger": request.user.has_perm("netbox_lens.trigger_lens"),
             "lens_version": apps.get_app_config("netbox_lens").version,
             "config_error": None if backends else (
@@ -704,17 +575,12 @@ def _refresh_ips_filter(request):
 
 # Netdisco Sync preset: devices whose last sync is older than this.
 SYNC_STALE_DAYS = 30
-# Device CFs the SNMP modulator writes (Modulator bulk tab: column and presets).
-MODULATOR_LAST_CF = "snmp_modulator_last_updated"
-MODULATOR_MODULE_CF = "snmp_exporter_module"
-MODULATOR_AUTH_CF = "snmp_auth_profile"
 # Device CF discobox stamps after each applied rebuild (Bulk Rebuild column and presets).
 REBUILD_LAST_CF = "inventory_last_rebuild"
 # discobox's default rebuild.max_devices, until a run reports the real cap.
 REBUILD_BATCH_DEFAULT = 20
 # Per-device estimate before a run has measured its own average.
 REBUILD_EST_SECONDS = 40
-MODULATOR_EST_SECONDS = 30
 
 
 def _pin_tag(service):
@@ -777,21 +643,6 @@ def _bulk_presets(tab, current_qs):
             (_("Not rebuilt for %(days)d days") % {"days": SYNC_STALE_DAYS},
              qs(*base, *skip, (f"{last}__empty", "false"), (f"{last}__lt", stale))) if has_last else None,
             (_("Never rebuilt"), qs(*base, *skip, (f"{last}__empty", "true"))) if has_last else None,
-        ]
-    elif tab == "modulator":
-        base = (("has_primary_ip", "true"), ("status", "active"))
-        skip = tuple(("role__n", r) for r in _existing_roles(_refresh_ip_excluded_roles()))
-        stale = (timezone.localdate() - timedelta(days=SYNC_STALE_DAYS)).isoformat()
-        last = f"cf_{MODULATOR_LAST_CF}"
-        module_empty = f"cf_{MODULATOR_MODULE_CF}__empty"
-        has_last = _device_filters_exist(f"{last}__empty", f"{last}__lt")
-        presets += [
-            (_("Switches"), qs(*base, ("role", "switch"))) if _existing_roles(["switch"]) else None,
-            (_("No SNMP module"), qs(*base, *skip, (module_empty, "true")))
-            if _device_filters_exist(module_empty) else None,
-            (_("Not modulated for %(days)d days") % {"days": SYNC_STALE_DAYS},
-             qs(*base, *skip, (f"{last}__empty", "false"), (f"{last}__lt", stale))) if has_last else None,
-            (_("Never modulated"), qs(*base, *skip, (f"{last}__empty", "true"))) if has_last else None,
         ]
     else:
         # no has_primary_ip and no AP exclusion: APs sync with their WLC
@@ -978,7 +829,7 @@ class LensBulkSyncView(PermissionRequiredMixin, View):
 
 
 def _run_context(ok, run, error, est_seconds, selectable):
-    """A bulk run (discobox /rebuild/all, modulator /probe/run) ready for the
+    """A bulk run (discobox /rebuild/all) ready for the
     template: progress, remaining-time estimate, per-device rows with links.
     Both services put their totals (total, done, remaining, running, ...) at
     the top level of the run."""
@@ -1026,17 +877,6 @@ def _rebuild_run_context(config):
         if b and not e.get("reason"):
             e["reason"] = _("brake: %(stale)s of %(total)s %(kind)s (%(percent)s%%) would go") % {
                 "stale": b.get("stale"), "total": b.get("total"), "kind": b.get("kind"), "percent": b.get("percent")}
-    return ctx
-
-
-def _modulator_run_context(config):
-    ok, run, error = probe_run_status(config)
-    ctx = _run_context(ok, run, error, MODULATOR_EST_SECONDS, lambda e: e.get("status") == "ok" and e.get("changed"))
-    for e in (ctx.get("run") or {}).get("devices") or []:
-        e["preselect"] = e["selectable"]
-        old, new = e.get("previous_modules") or [], e.get("final_modules") or []
-        e["added"] = [m for m in new if m not in old]
-        e["removed"] = [m for m in old if m not in new]
     return ctx
 
 
@@ -1252,62 +1092,6 @@ class LensBulkRebuildRunView(_BulkRunPanelView):
     page, template = LensBulkRebuildView, "netbox_lens/bulk_rebuild_run.html"
 
 
-class LensBulkModulatorView(_BulkRunView):
-    """Bulk SNMP Modulator: the modulator's async /probe/run with dry run. An
-    older modulator without it falls back to the fire-and-forget
-    /probe/netbox (server mode, no preview, no result)."""
-    tab, template, config_key, last_cf = "modulator", "netbox_lens/bulk_modulator.html", "snmp_modulator", MODULATOR_LAST_CF
-    est_seconds = MODULATOR_EST_SECONDS
-    unknown_reason = "not taken by the modulator"
-
-    def run_context(self, config):
-        return _modulator_run_context(config)
-
-    def start(self, config, ids, dry_run):
-        return probe_run_start(config, ids, dry_run=dry_run)
-
-    def cancel(self, config):
-        return probe_run_cancel(config)
-
-    ineligible_label = "no SNMP auth profile"
-
-    def eligible(self, qs):
-        # the modulator needs an SNMP auth profile to probe with
-        key = f"custom_field_data__{MODULATOR_AUTH_CF}"
-        # a missing key, JSON null (set when the CF was added) or ""
-        return qs.exclude(**{f"{key}__isnull": True}).exclude(**{key: None}).exclude(**{key: ""})
-
-    def row_extra(self, device):
-        return {"last": device.cf.get(MODULATOR_LAST_CF), "module": device.cf.get(MODULATOR_MODULE_CF),
-                "auth": device.cf.get(MODULATOR_AUTH_CF)}
-
-    def post(self, request):
-        if request.POST.get("action") != "legacy":
-            return super().post(request)
-        # older modulator: one fire-and-forget probe over the ids, in the server's mode
-        filter_qs = request.POST.get("filter_qs", "")
-        if request.POST.get("confirm") != "yes":
-            messages.error(request, _("Tick the confirmation first."))
-            return redirect(f"{request.path}?{filter_qs}")
-        context = self._context(request, QueryDict(filter_qs))
-        ids = [r["id"] for r in context.get("rows") or [] if not r["pinned"] and not r["ineligible"]]
-        if not ids:
-            messages.error(request, context.get("error") or _("No devices to probe."))
-        else:
-            ok, data, error = snmp_modulator_probe_devices(self.config(), ids)
-            if not ok:
-                messages.error(request, error)
-            elif (data or {}).get("status") == "queued":
-                messages.success(request, _("Probe queued for %(n)d devices. Results show up in the device's SNMP fields as each one finishes.") % {"n": len(ids)})
-            else:
-                messages.warning(request, _("Not queued: %(r)s") % {"r": (data or {}).get("reason") or (data or {}).get("status")})
-        return redirect(f"{request.path}?{filter_qs}")
-
-
-class LensBulkModulatorRunView(_BulkRunPanelView):
-    page, template = LensBulkModulatorView, "netbox_lens/bulk_modulator_run.html"
-
-
 def _run_rebuild_now(config, ip):
     """Runs in a background thread — discobox's /rebuild has no async mode, and
     blocking the request for the ~2-3 minutes a rebuild takes defeats the point
@@ -1377,139 +1161,6 @@ class LensSyncView(PermissionRequiredMixin, View):
         else:
             reason = (data or {}).get("reason") or "unknown reason"
             messages.warning(request, f"Sync skipped for {ip}: {reason}.")
-
-        return redirect(device.get_absolute_url())
-
-
-def _module_diff(previous, final):
-    """Merge a before/after module list into one sorted list tagged with
-    each module's status, so the template can render a single list with
-    additions/removals highlighted instead of two separate before/after lists."""
-    previous = set(previous or [])
-    final = set(final or [])
-    return [
-        {
-            "name": m,
-            "status": "added" if m in final and m not in previous else
-                      "removed" if m in previous and m not in final else "unchanged",
-        }
-        for m in sorted(previous | final)
-    ]
-
-
-def _module_rows(result):
-    """test_results only covers modules that were actually SNMP-probed — a module
-    added unconditionally (mandatory per rule config) never gets tested, so it
-    would otherwise vanish from the table despite being part of the final set.
-    Returns test_results (tagged tested=True) plus a synthetic, untested row for
-    each such module. Trusts a "profile" field set by the modulator itself when
-    present; falls back to inferring it from module-set membership for
-    modulator versions that don't set it yet."""
-    final_fast = set(result.get("final_modules_fast") or [])
-    previous_fast = set(result.get("previous_modules_fast") or [])
-
-    def _profile(module_name, given):
-        return given or ("fast" if module_name in final_fast or module_name in previous_fast else "normal")
-
-    tested = [
-        dict(t, tested=True, profile=_profile(t.get("module"), t.get("profile")))
-        for t in (result.get("test_results") or [])
-    ]
-    tested_names = {t["module"] for t in tested}
-    final_all = set(result.get("final_modules") or []) | final_fast
-    mandatory = [
-        {
-            "module": m, "useful": None, "metric_count": None, "duration_seconds": None, "error": None,
-            "tested": False, "profile": _profile(m, None),
-        }
-        for m in sorted(final_all - tested_names)
-    ]
-    return tested + mandatory
-
-
-def _annotate_probe_result(result):
-    """Add template-friendly derived flags to a ModulationResult dict in place:
-    has_fast (whether the fast polling profile applies to this device at all),
-    fast_changed (its module set differs from before), the merged module diffs,
-    module_rows (test_results plus untested-but-mandatory modules), and pending
-    (whether there's anything at all for a follow-up commit to write). Prefers
-    fast_profile_enabled/changed_fast straight from the API when the modulator
-    sets them, falling back to inference for older modulator versions."""
-    has_fast = result.get("fast_profile_enabled")
-    if has_fast is None:
-        has_fast = bool(
-            result.get("previous_modules_fast") or result.get("final_modules_fast") or result.get("resolved_interval_fast")
-        )
-    fast_changed = result.get("changed_fast")
-    if fast_changed is None:
-        fast_changed = result.get("previous_modules_fast") != result.get("final_modules_fast")
-
-    result["has_fast"] = has_fast
-    result["fast_changed"] = fast_changed
-    result["normal_module_diff"] = _module_diff(result.get("previous_modules"), result.get("final_modules"))
-    result["fast_module_diff"] = _module_diff(result.get("previous_modules_fast"), result.get("final_modules_fast"))
-    result["module_rows"] = _module_rows(result)
-    result["pending"] = any([
-        result.get("changed"),
-        result.get("auth_changed"),
-        result.get("polling_interval"),
-        result.get("polling_timeout"),
-        result.get("polling_interval_fast"),
-        result.get("polling_timeout_fast"),
-        result.get("pending_add_tags"),
-        result.get("pending_remove_tags"),
-        fast_changed,
-    ])
-
-
-class LensProbeView(PermissionRequiredMixin, View):
-    permission_required = "netbox_lens.trigger_lens"
-
-    def post(self, request, pk):
-        device = get_object_or_404(NbDevice, pk=pk)
-        ip = _device_ip(device)
-        dry_run = request.POST.get("dry_run", "true") != "false"
-        wait = request.POST.get("wait", "true") != "false"
-        context = {"device": device, "dry_run": dry_run, "wait": wait}
-
-        if not ip:
-            context["error"] = "This device has no primary IPv4 address."
-        else:
-            config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
-            ok, status_code, data, error = snmp_modulator_probe(config, ip, dry_run=dry_run, wait=wait)
-            if ok and status_code == 200 and isinstance(data, dict) and isinstance(data.get("result"), dict):
-                _annotate_probe_result(data["result"])
-            context.update({"ok": ok, "status_code": status_code, "data": data, "error": error})
-
-        return render(request, "netbox_lens/probe_modal.html", context)
-
-
-class LensUpdateModulesView(PermissionRequiredMixin, View):
-    """Applies the SNMP module/polling config immediately (dry_run=false,
-    wait=false), skipping the preview modal — a plain form post + message
-    banner like Discover/Macsuck/Arpnip. wait=false queues it in the
-    background and returns instantly, so this is genuinely non-blocking,
-    unlike Rebuild Now."""
-    permission_required = "netbox_lens.trigger_lens"
-
-    def post(self, request, pk):
-        device = get_object_or_404(NbDevice, pk=pk)
-        ip = _device_ip(device)
-        if not ip:
-            messages.error(request, "This device has no primary IPv4 address.")
-            return redirect(device.get_absolute_url())
-
-        config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("snmp_modulator", {})
-        ok, status_code, data, error = snmp_modulator_probe(config, ip, dry_run=False, wait=False)
-        data = data or {}
-        if not ok:
-            messages.error(request, error or "SNMP Modulator request failed.")
-        elif status_code == 202 and data.get("status") == "queued":
-            messages.success(request, f"Module update queued for {ip}.")
-        elif status_code == 202:
-            messages.warning(request, f"Module update skipped for {ip}: {data.get('reason', 'already in progress')}.")
-        else:
-            messages.error(request, f"Unexpected response from SNMP Modulator (HTTP {status_code}).")
 
         return redirect(device.get_absolute_url())
 
@@ -1943,7 +1594,8 @@ class LensInterfaceNodesDataView(PermissionRequiredMixin, View):
 
     def get(self, request, pk):
         iface = get_object_or_404(NbInterface.objects.select_related("device__primary_ip4"), pk=pk)
-        return render(request, "netbox_lens/interface_nodes_data.html", interface_nodes_context(iface))
+        return render(request, "netbox_lens/interface_nodes_data.html",
+                      interface_nodes_context(iface, history=request.GET.get("history") == "1"))
 
 
 class LensDeviceStatsDataView(PermissionRequiredMixin, View):

@@ -113,6 +113,7 @@
         <td>
           {% if row.client_ip %}<code class="lens-copy" data-value="{{ row.client_ip }}">{{ row.client_ip }}</code>
           {% else %}—{% endif %}
+          {% if row.client_others %}<div class="small text-muted" title="{% for o in row.client_others|slice:":10" %}{{ o.ip }}{% if o.dns %} {{ o.dns }}{% endif %}{% if not forloop.last %}&#10;{% endif %}{% endfor %}{% if row.client_others|length > 10 %}&#10;…{% endif %}">+{{ row.client_others|length }} {% if row.client_others|length == 1 %}other IP{% else %}other IPs{% endif %}{% if row.client_others|length >= 20 %} <span class="badge text-bg-warning" title="One MAC answers for many IPs: a load balancer, firewall or proxy ARP, not a single client">shared MAC</span>{% endif %}</div>{% endif %}
         </td>
         <td>
           {% if row.client_name %}<code class="lens-copy" data-value="{{ row.client_name }}">{{ row.client_name }}</code>

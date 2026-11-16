@@ -1,6 +1,6 @@
 {% load i18n %}
 {% load lens_filters %}
-{# Base of a bulk run panel (Bulk Rebuild, Bulk SNMP Modulator); polls itself while the run is going. #}
+{# Base of a bulk run panel (Bulk Rebuild); polls itself while the run is going. #}
 <div id="lens-bulk-run"{% if run.running %}
      hx-get="{{ run_url }}?filter_qs={{ filter_qs|urlencode }}"
      hx-trigger="every 10s" hx-swap="outerHTML"{% endif %}>

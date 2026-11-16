@@ -148,6 +148,7 @@ def build_mac_history(
     until = date_to.isoformat() if date_to else None
     require_active = not (date_from or date_to)
 
+    matched_clients = {}  # client search: MAC -> the ARP entry that matched
     if device_ip:
         nodes = _fetch_nodes_for_targets(
             backends, [(device_ip, None, None)], since=since, until=until, require_active=require_active,
@@ -163,7 +164,10 @@ def build_mac_history(
         # no port. Resolve to MAC(s) first, then fetch sightings per MAC.
         macs_found = set()
         for b in backends:
-            macs_found.update(b.find_macs(client_query, partial=True))
+            for c in b.find_clients(client_query, partial=True):
+                macs_found.add(c["mac"])
+                if c.get("ip") and c["mac"] not in matched_clients:
+                    matched_clients[c["mac"]] = {"ip": c["ip"], "dns": c.get("dns")}
         nodes = []
         for mac in macs_found:
             nodes.extend(_fetch_sightings(
@@ -207,6 +211,12 @@ def build_mac_history(
     rows = []
     for n in nodes:
         client = client_map.get(n.get("mac")) or {}
+        hit = matched_clients.get(n.get("mac"))
+        if hit:
+            # show the entry that was searched for, the MAC's other IPs beside it
+            entries = [{"ip": client.get("ip"), "dns": client.get("dns")}] + list(client.get("others") or [])
+            others = [e for e in entries if e.get("ip") and e["ip"] != hit["ip"]]
+            client = {**hit, "others": others}
         rows.append({
             "device_ip": n.get("_device_ip"),
             "device_name": n.get("_device_name"),
@@ -215,6 +225,7 @@ def build_mac_history(
             "vlan": n.get("vlan"),
             "client_ip": client.get("ip"),
             "client_name": client.get("dns"),
+            "client_others": client.get("others") or [],
             "ssid": n.get("ssid"),
             "sigstrength": n.get("sigstrength"),
             "active": n.get("active"),

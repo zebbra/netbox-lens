@@ -1,6 +1,7 @@
 {% load i18n %}
 {% load lens_filters %}
 {% if lens_nodes %}
+{% if lens_truncated %}<div class="alert alert-warning py-1 px-2 small m-2">{% blocktrans with n=lens_max %}Only the newest {{ n }} MACs are shown.{% endblocktrans %}</div>{% endif %}
 <div class="table-responsive">
   <table class="table table-hover table-headings mb-0">
     <thead>
@@ -11,6 +12,7 @@
         <th>{% trans "Client Name" %}</th>
         <th>{% trans "First Seen" %}</th>
         <th>{% trans "Last Seen" %}</th>
+        {% if lens_history %}<th>{% trans "Active" %}</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -22,6 +24,7 @@
         <td>{% if node.client_name %}<code class="lens-copy" data-value="{{ node.client_name }}">{{ node.client_name }}</code>{% else %}—{% endif %}</td>
         <td class="text-nowrap"><span title="{{ node.time_first|lens_ago }}">{{ node.time_first|lens_datetime|default:"—" }}</span></td>
         <td class="text-nowrap"><span title="{{ node.time_last|lens_ago }}">{{ node.time_last|lens_datetime|default:"—" }}</span></td>
+        {% if lens_history %}<td>{% if node.active %}<span class="badge text-bg-success">{% trans "yes" %}</span>{% else %}<span class="text-muted">{% trans "no" %}</span>{% endif %}</td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -29,6 +32,6 @@
 </div>
 {% else %}
 <div class="card-body text-muted small">
-  <i class="mdi mdi-lan-disconnect" aria-hidden="true"></i> {% trans "No active MACs on this port." %}
+  <i class="mdi mdi-lan-disconnect" aria-hidden="true"></i> {% if lens_history %}{% trans "Netdisco keeps no MACs for this port." %}{% else %}{% trans "No active MACs on this port." %}{% endif %}
 </div>
 {% endif %}
