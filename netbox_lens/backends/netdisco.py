@@ -25,6 +25,16 @@ _TIMEOUT_UNITS_US = {"us": 1, "ms": 1_000, "s": 1_000_000, "m": 60_000_000, "h":
 # call per MAC. A broad wildcard can match hundreds, so past this many only
 # the sightings from the search itself are shown.
 MAX_SIGHTING_FOLLOWUPS = 20
+# one MAC answering for this many IPs is a load balancer, firewall or proxy ARP
+SHARED_MAC_MIN_IPS = 20
+
+
+def _ip_counts(rows):
+    ips = {}
+    for r in rows:
+        if r.get("mac") and r.get("ip"):
+            ips.setdefault(r["mac"], set()).add(r["ip"])
+    return {m: len(v) for m, v in ips.items()}
 
 
 def _search_timeout_hint(query, since, until, timeout):
@@ -203,8 +213,19 @@ class NetdiscoBackend(LensBackend):
                 )
             if result.sightings:
                 _apply_ssid(result.sightings, data.get("wireless"))
-            elif seen_macs:
-                result.sightings = self._sightings_for_macs(result.history_macs, archived, since, until)
+            followup_counts = {}
+            if not result.sightings and seen_macs:
+                result.sightings = self._sightings_for_macs(
+                    result.history_macs, archived, since, until, followup_counts)
+            # IPs per MAC: from the search itself, and from the per-MAC follow-ups
+            # (a hostname match returns only the matched IP, not the MAC's others)
+            counts = _ip_counts(result.ips)
+            for m, n in followup_counts.items():
+                counts[m] = max(counts.get(m, 0), n)
+            for row in result.ips:
+                n = counts.get(row.get("mac"), 0)
+                row["mac_ip_count"] = n
+                row["shared_mac"] = n >= SHARED_MAC_MIN_IPS
 
             # Device name/hostname matching is a separate Netdisco entity from
             # node/MAC sightings — query it too so switch/router hostnames
@@ -277,7 +298,7 @@ class NetdiscoBackend(LensBackend):
         except Exception:
             return []
 
-    def _mac_sightings(self, mac, archived, since=None, until=None):
+    def _mac_sightings(self, mac, archived, since=None, until=None, ip_counts=None):
         """All sightings of one exact MAC, with its SSID where known."""
         params = {"q": mac, "archived": "true" if archived else "false", "deviceports": "false", "port_context": "true"}
         if since:
@@ -294,12 +315,14 @@ class NetdiscoBackend(LensBackend):
         data = resp.json() if resp.content else {}
         sightings = data.get("sightings") or []
         _apply_ssid(sightings, data.get("wireless"))
+        if ip_counts is not None:
+            ip_counts.update(_ip_counts((data.get("ips") or []) + (data.get("macs") or [])))
         return sightings
 
-    def _sightings_for_macs(self, macs, archived, since=None, until=None):
+    def _sightings_for_macs(self, macs, archived, since=None, until=None, ip_counts=None):
         sightings = []
         with ThreadPoolExecutor(max_workers=8) as executor:
-            for rows in executor.map(lambda m: self._mac_sightings(m, archived, since, until), macs):
+            for rows in executor.map(lambda m: self._mac_sightings(m, archived, since, until, ip_counts), macs):
                 sightings.extend(rows)
         sightings.sort(key=lambda s: s.get("time_last") or "", reverse=True)
         return sightings

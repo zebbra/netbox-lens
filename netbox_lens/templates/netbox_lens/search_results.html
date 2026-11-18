@@ -118,7 +118,7 @@
           {% for row in backend.ips %}
           {% with dname=row.router_name|default:row.router_ip %}
           <tr>
-            <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code></td>
+            <td class="text-nowrap"><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac }}</code>{% if row.shared_mac %} <span class="badge text-bg-warning" title="{% blocktrans with n=row.mac_ip_count %}This MAC answers for {{ n }} IPs: a load balancer, firewall or proxy ARP, not a single client{% endblocktrans %}">{% trans "shared MAC" %}</span>{% endif %}</td>
             <td><code class="lens-copy" data-value="{{ row.ip }}">{{ row.ip }}</code></td>
             <td>
               {% if row.dns %}<code class="lens-copy" data-value="{{ row.dns }}">{{ row.dns }}</code>
