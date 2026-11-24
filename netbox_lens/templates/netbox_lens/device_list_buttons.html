@@ -1,8 +1,8 @@
 {% load i18n %}
 <div class="dropdown d-inline-block">
   <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"
-          title="{% trans 'LENS bulk actions for the devices matching this filter' %}">
-    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i> LENS
+          title="{% trans 'Netdisco bulk actions for the devices matching this filter' %}">
+    <i class="mdi mdi-network" aria-hidden="true"></i> Netdisco
   </button>
   <ul class="dropdown-menu">
     <li><a class="dropdown-item" href="{% url 'plugins:netbox_lens:refresh_ips' %}{% if lens_filter_qs %}?{{ lens_filter_qs }}{% endif %}">

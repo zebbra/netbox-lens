@@ -25,6 +25,9 @@ _TIMEOUT_UNITS_US = {"us": 1, "ms": 1_000, "s": 1_000_000, "m": 60_000_000, "h":
 # call per MAC. A broad wildcard can match hundreds, so past this many only
 # the sightings from the search itself are shown.
 MAX_SIGHTING_FOLLOWUPS = 20
+# earlier (archived) IPs are looked up per MAC, so only for searches that
+# found this few MACs
+MAX_EARLIER_IP_MACS = 5
 # one MAC answering for this many IPs is a load balancer, firewall or proxy ARP
 SHARED_MAC_MIN_IPS = 20
 
@@ -226,6 +229,8 @@ class NetdiscoBackend(LensBackend):
                 n = counts.get(row.get("mac"), 0)
                 row["mac_ip_count"] = n
                 row["shared_mac"] = n >= SHARED_MAC_MIN_IPS
+            if not archived and not since:
+                result.earlier_ips = self._earlier_ips(result.ips)
 
             # Device name/hostname matching is a separate Netdisco entity from
             # node/MAC sightings — query it too so switch/router hostnames
@@ -318,6 +323,42 @@ class NetdiscoBackend(LensBackend):
         if ip_counts is not None:
             ip_counts.update(_ip_counts((data.get("ips") or []) + (data.get("macs") or [])))
         return sightings
+
+    def _mac_ip_rows(self, mac):
+        """All IP rows of one exact MAC, archived included."""
+        resp = requests.get(
+            f"{self.config.get('url', '').rstrip('/')}/api/v1/search/node",
+            headers={"Authorization": f"Bearer {self._viewer_token()}", "Accept": "application/json"},
+            params={"q": mac, "partial": "false", "archived": "true", "deviceports": "false", "show_vendor": "true"},
+            timeout=self.config.get("timeout", 15),
+            verify=self.config.get("verify_ssl", True),
+        )
+        if not resp.ok:
+            return []
+        data = resp.json() if resp.content else {}
+        return (data.get("ips") or []) + (data.get("macs") or []) if isinstance(data, dict) else []
+
+    def _earlier_ips(self, ip_rows):
+        """IPs the MACs in ip_rows had before and no longer have active, newest
+        first, one row per (MAC, IP). Skipped for shared MACs (a load balancer
+        or proxy ARP has hundreds) and for searches with many MACs."""
+        macs = sorted({r["mac"] for r in ip_rows if r.get("mac") and not r.get("shared_mac")})
+        if not macs or len(macs) > MAX_EARLIER_IP_MACS:
+            return []
+        current = {(r.get("mac"), r.get("ip")) for r in ip_rows}
+        latest = {}
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_EARLIER_IP_MACS) as executor:
+                for rows in executor.map(self._mac_ip_rows, macs):
+                    for r in rows:
+                        key = (r.get("mac"), r.get("ip"))
+                        if not r.get("ip") or key in current or r.get("active"):
+                            continue
+                        if key not in latest or (r.get("time_last") or "") > (latest[key].get("time_last") or ""):
+                            latest[key] = r
+        except requests.RequestException:
+            return []
+        return sorted(latest.values(), key=lambda r: r.get("time_last") or "", reverse=True)
 
     def _sightings_for_macs(self, macs, archived, since=None, until=None, ip_counts=None):
         sightings = []
@@ -883,6 +924,25 @@ class NetdiscoBackend(LensBackend):
             }
         except Exception:
             return {}
+
+    def ip_holder(self, device_ip: str) -> dict | None:
+        """Another Netdisco device that has device_ip as an alias (an
+        interface IP), when there is no device at device_ip itself. Netdisco
+        resolves a discover of that IP to the holder, so the device behind it
+        never gets created, and discobox < 2.8 synced the holder's data
+        instead. {name, ip, last_discover} or None."""
+        data, _ = self._get_json(f"search/device?ip={device_ip}&matchall=false")
+        for d in data if isinstance(data, list) else []:
+            if isinstance(d, dict) and d.get("ip") and d["ip"] != device_ip:
+                return {
+                    "name": d.get("name") or d.get("dns") or d["ip"],
+                    "ip": d["ip"],
+                    "serial": d.get("serial"),
+                    # search/device has *_stamp, not the raw timestamps
+                    "last_discover": d.get("last_discover_stamp") or d.get("last_discover"),
+                    "web_url": self.device_web_url(d["ip"]),
+                }
+        return None
 
     def device_web_url(self, device_ip: str) -> str | None:
         web_url = self.config.get("web_url", "").rstrip("/")

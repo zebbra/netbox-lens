@@ -1,0 +1,38 @@
+{% extends 'generic/object.html' %}
+{% load i18n %}
+
+{% block content %}
+{# Interface tab: active MACs on the port load when the tab opens; History swaps in every MAC Netdisco still keeps. #}
+<div class="row">
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="mdi mdi-network" aria-hidden="true"></i>
+        <strong>{% trans "MACs on" %} {{ object.name }}</strong>
+        <span id="lens-macs-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+        <button type="button" class="btn btn-sm btn-outline-primary ms-auto"
+                hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=object.pk %}"
+                hx-target="#lens-iface-macs" hx-swap="innerHTML" hx-indicator="#lens-macs-spinner"
+                title="{% trans 'Active MACs on this port, with client IP and name from ARP' %}">
+          <i class="mdi mdi-check-network-outline" aria-hidden="true"></i> {% trans "Active" %}
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=object.pk %}?history=1"
+                hx-target="#lens-iface-macs" hx-swap="innerHTML" hx-indicator="#lens-macs-spinner"
+                title="{% trans 'Every MAC Netdisco still keeps for this port, also long gone ones, newest first' %}">
+          <i class="mdi mdi-history" aria-hidden="true"></i> {% trans "History" %}
+        </button>
+      </div>
+      <div id="lens-iface-macs"
+           hx-get="{% url 'plugins:netbox_lens:interface_nodes_data' pk=object.pk %}"
+           hx-trigger="load" hx-swap="innerHTML" hx-indicator="#lens-macs-spinner">
+        <div class="card-body text-muted d-flex align-items-center gap-2">
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          {% trans "Loading from Netdisco…" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% include "netbox_lens/interface_lens_assets.html" %}
+{% endblock %}

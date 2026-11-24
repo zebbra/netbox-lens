@@ -2,8 +2,8 @@
 {# Right column: Netdisco's view of the port — a few single-row lookups, cheap enough to load with the page (after it renders). #}
 <div class="card">
   <div class="card-header d-flex align-items-center gap-2">
-    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
-    <strong>LENS</strong> <span class="text-muted">— {% trans "Port info" %}</span>
+    <i class="mdi mdi-network" aria-hidden="true"></i>
+    <strong>Netdisco</strong> <span class="text-muted">— {% trans "Port info" %}</span>
     <span id="lens-port-spinner" class="htmx-indicator spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
     <button type="button" class="btn btn-sm btn-outline-primary ms-auto"
             hx-get="{% url 'plugins:netbox_lens:interface_port_data' pk=lens_interface_pk %}"

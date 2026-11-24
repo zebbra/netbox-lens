@@ -2,13 +2,13 @@
 {% load i18n %}
 {% load lens_filters %}
 
-{% block title %}{% trans "LENS – Backend Status" %}{% endblock %}
+{% block title %}{% trans "Netdisco – Backend Status" %}{% endblock %}
 
 {% block content %}
 
 <div class="text-muted small mb-3">
-  <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
-  {% trans "LENS plugin version" %} <strong>{{ lens_version }}</strong>
+  <i class="mdi mdi-network" aria-hidden="true"></i>
+  {% trans "Netdisco plugin version" %} <strong>{{ lens_version }}</strong> <span class="text-muted">(netbox-lens)</span>
 </div>
 
 {% if config_error %}

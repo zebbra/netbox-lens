@@ -34,7 +34,7 @@ from .discobox import rebuild_inventory, refresh_ip, set_paused, sync_all, stats
 from .down_ports import build_down_ports
 from .forms import BASIS_CHOICES, ArpHistoryForm, DownPortsForm, InterfaceSearchForm, MacHistoryForm, NacStatusForm, NodeSearchForm
 from .interface_search import apply_live_status, apply_vm_oper_status, build_interface_list
-from .template_content import apply_ap_radio_links, apply_transit_ports, device_node_stats, device_panel_context, device_panel_enabled, interface_nodes_context, interface_port_context
+from .template_content import apply_ap_radio_links, apply_port_nac, apply_transit_ports, device_ip_conflict, merge_ap_uplinks, device_neighbors_context, device_panel_context, device_panel_enabled, interface_nodes_context, interface_port_context
 from .mac_history import build_mac_history
 from .nac_status import build_nac_status
 
@@ -70,7 +70,7 @@ def _enrich_results(results):
             name = (s.get("device") or {}).get("name") or s.get("switch")
             if name:
                 names.add(name)
-        for ip in r.ips or []:
+        for ip in (r.ips or []) + (getattr(r, "earlier_ips", None) or []):
             name = ip.get("router_name")
             if name:
                 names.add(name)
@@ -85,7 +85,7 @@ def _enrich_results(results):
                 name = (s.get("device") or {}).get("name") or s.get("switch")
                 if name and name in url_map:
                     s["nb_device_url"] = url_map[name]
-            for ip in r.ips or []:
+            for ip in (r.ips or []) + (getattr(r, "earlier_ips", None) or []):
                 name = ip.get("router_name")
                 if name and name in url_map:
                     ip["nb_device_url"] = url_map[name]
@@ -367,9 +367,11 @@ class LensSearchView(PermissionRequiredMixin, View):
 
                 _enrich_results(results)
                 _enrich_sightings(results, backends, config.get("victoria_metrics", {}))
-                for r in results:
+                for b, r in zip(backends, results):
                     if r:
                         apply_transit_ports(r.sightings or [])
+                        merge_ap_uplinks(r.sightings or [])
+                        apply_port_nac(r.sightings or [], b)
                 context["results"] = results
                 context["query"] = query
                 context["query_note"] = form.cleaned_data.get("q_note")
@@ -403,9 +405,42 @@ class LensSearchHistoryView(PermissionRequiredMixin, View):
                               sightings=sightings, history_macs=macs)
         _enrich_sightings([result], [backend], config.get("victoria_metrics", {}))
         apply_transit_ports(result.sightings or [])
+        merge_ap_uplinks(result.sightings or [])
+        apply_port_nac(result.sightings or [], backend)
         return render(request, "netbox_lens/search_sightings.html", {
             "backend": result, "history": True, "history_error": error,
         })
+
+
+def _ip_conflict_message(holder):
+    return (
+        f"Netdisco has this device's IP as an alias of {holder['name']} ({holder['ip']}), "
+        f"so it would act on that device instead. Delete {holder['name']} in Netdisco first."
+    )
+
+
+def _blocked_by_ip_conflict(request, device):
+    """Sync, rebuild and Netdisco jobs on an IP another Netdisco device holds
+    as an alias all land on that device. Refuse them with a message."""
+    holder = device_ip_conflict(device)
+    if holder:
+        messages.error(request, _ip_conflict_message(holder))
+    return bool(holder)
+
+
+def _skip_reason(data):
+    """discobox's skip/error reason, readable. ip_held_by_other_device
+    (discobox >= 2.8) names the Netdisco device holding the IP: hostname in
+    a single /rebuild result, netdisco_hostname in a /rebuild/all entry
+    (where hostname stays the NetBox name)."""
+    data = data or {}
+    reason = data.get("reason")
+    if reason == "ip_held_by_other_device":
+        return _ip_conflict_message({
+            "name": data.get("netdisco_hostname") or data.get("hostname") or "another device",
+            "ip": data.get("netdisco_ip") or "?",
+        })
+    return reason
 
 
 class LensTriggerJobView(PermissionRequiredMixin, View):
@@ -423,6 +458,9 @@ class LensTriggerJobView(PermissionRequiredMixin, View):
         backends = get_backends(config)
         if not backends:
             messages.error(request, "No backends are configured.")
+            return redirect(device.get_absolute_url())
+
+        if _blocked_by_ip_conflict(request, device):
             return redirect(device.get_absolute_url())
 
         kwargs = {}
@@ -445,13 +483,13 @@ def _interpret_rebuild_result(ok, data, error):
     rather than an HTTP error, so a transport-level success isn't enough here."""
     data = data or {}
     if ok and data.get("status") == "error":
-        error = data.get("reason") or (
+        error = _skip_reason(data) or (
             "Discobox could not rebuild this device — Netdisco has no record of it "
             "(not discovered yet, or unreachable)."
         )
         ok = False
     elif ok and data.get("status") == "skipped":
-        error = f"Rebuild skipped: {data.get('reason') or 'sync is paused or already in progress'}."
+        error = f"Rebuild skipped: {_skip_reason(data) or 'sync is paused or already in progress'}"
         ok = False
     return ok, error
 
@@ -465,8 +503,11 @@ class LensRebuildInventoryView(PermissionRequiredMixin, View):
         dry_run = request.POST.get("dry_run", "true") != "false"
         context = {"device": device, "dry_run": dry_run}
 
+        holder = device_ip_conflict(device) if ip else None
         if not ip:
             context["error"] = "This device has no primary IPv4 address."
+        elif holder:
+            context["error"] = _ip_conflict_message(holder)
         else:
             config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
             ok, data, error = rebuild_inventory(config, ip, dry_run=dry_run)
@@ -843,6 +884,8 @@ def _run_context(ok, run, error, est_seconds, selectable):
             for d in NbDevice.objects.filter(pk__in=[e.get("device_id") for e in devices if e.get("device_id")])}
     for e in devices:
         e["url"] = urls.get(e.get("device_id"))
+        if e.get("reason") == "ip_held_by_other_device":
+            e["reason"] = _skip_reason(e)
         e["selectable"] = bool(e.get("device_id")) and selectable(e)
     total = run.get("total") or len(devices)
     done = run.get("done") or 0
@@ -1127,6 +1170,9 @@ class LensRebuildNowView(PermissionRequiredMixin, View):
             messages.error(request, "This device has no primary IPv4 address.")
             return redirect(device.get_absolute_url())
 
+        if _blocked_by_ip_conflict(request, device):
+            return redirect(device.get_absolute_url())
+
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
         threading.Thread(target=_run_rebuild_now, args=(config, ip), daemon=True).start()
         messages.info(
@@ -1152,6 +1198,9 @@ class LensSyncView(PermissionRequiredMixin, View):
             messages.error(request, "Force sync is restricted to administrators.")
             return redirect(device.get_absolute_url())
 
+        if _blocked_by_ip_conflict(request, device):
+            return redirect(device.get_absolute_url())
+
         config = settings.PLUGINS_CONFIG.get("netbox_lens", {}).get("discobox", {})
         ok, data, error = sync_device(config, ip, force=force)
         if not ok:
@@ -1159,8 +1208,8 @@ class LensSyncView(PermissionRequiredMixin, View):
         elif (data or {}).get("status") == "queued":
             messages.success(request, f"Sync from Netdisco to NetBox queued for {ip}.")
         else:
-            reason = (data or {}).get("reason") or "unknown reason"
-            messages.warning(request, f"Sync skipped for {ip}: {reason}.")
+            reason = _skip_reason(data) or "unknown reason"
+            messages.warning(request, f"Sync skipped for {ip}: {reason}")
 
         return redirect(device.get_absolute_url())
 
@@ -1194,6 +1243,7 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                 _enrich_mac_history(rows)
                 _apply_wireless(rows, backends)
                 apply_transit_ports(rows)
+                merge_ap_uplinks(rows)
                 if request.GET.get("export") == "csv":
                     return _csv_response(
                         "mac_history.csv",
@@ -1202,6 +1252,8 @@ class LensMacHistoryView(PermissionRequiredMixin, View):
                             ("Port", lambda r: r.get("port")),
                             ("Port Description", lambda r: r.get("port_description")),
                             ("Transit Via", lambda r: r.get("transit_via")),
+                            ("Via Switch", lambda r: r.get("via_switch")),
+                            ("Via Switch Port", lambda r: r.get("via_port")),
                             ("MAC", lambda r: r.get("mac")),
                             ("VLAN", lambda r: r.get("vlan")),
                             ("Client IP", lambda r: r.get("client_ip")),
@@ -1279,7 +1331,7 @@ class LensArpHistoryView(PermissionRequiredMixin, View):
 
 class LensInterfaceSearchView(PermissionRequiredMixin, View):
     permission_required = "netbox_lens.use_lens"
-    page_title = "Default"
+    page_title = "Port status"
     default_filters = {}
 
     def get(self, request):
@@ -1515,6 +1567,47 @@ if NbDevice:
         )
 
 
+def _interface_tab_visible(iface):
+    return bool(iface.device and iface.device.primary_ip4_id
+                and get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})))
+
+
+if NbInterface:
+    @register_model_view(NbInterface, name="lens_macs", path="lens-macs")
+    class InterfaceMacsView(ObjectView):
+        """Tab shell: the port's MACs load via htmx from
+        LensInterfaceNodesDataView once the tab is open (they used to sit
+        on the interface page itself)."""
+        queryset = NbInterface.objects.select_related("device")
+        additional_permissions = ["netbox_lens.use_lens"]
+        template_name = "netbox_lens/interface_macs.html"
+        tab = ViewTab(
+            label="MACs",
+            visible=_interface_tab_visible,
+            permission="netbox_lens.use_lens",
+            weight=2100,
+        )
+
+
+if NbDevice:
+    @register_model_view(NbDevice, name="lens_neighbors", path="lens-neighbors")
+    class DeviceNeighborsView(ObjectView):
+        """Tab shell only, same as DeviceMacArpView: the Netdisco /ports call
+        happens in LensDeviceNeighborsDataView via htmx, and only when the
+        tab is opened (it was too heavy for every device page)."""
+        queryset = NbDevice.objects.all()
+        additional_permissions = ["netbox_lens.use_lens"]
+        template_name = "netbox_lens/device_neighbors.html"
+        tab = ViewTab(
+            label="Neighbors",
+            visible=lambda device: device.primary_ip4_id is not None and device_panel_enabled(
+                device, settings.PLUGINS_CONFIG.get("netbox_lens", {})
+            ),
+            permission="netbox_lens.use_lens",
+            weight=2080,
+        )
+
+
 if NbDevice:
     from dcim.filtersets import DeviceFilterSet
     from dcim.forms import DeviceFilterForm
@@ -1576,9 +1669,18 @@ class LensDeviceJobsDataView(PermissionRequiredMixin, View):
         })
 
 
+class LensDeviceNeighborsDataView(PermissionRequiredMixin, View):
+    """htmx partial backing DeviceNeighborsView."""
+    permission_required = "netbox_lens.use_lens"
+
+    def get(self, request, pk):
+        device = get_object_or_404(NbDevice.objects.restrict(request.user, "view").select_related("primary_ip4"), pk=pk)
+        return render(request, "netbox_lens/device_neighbors_data.html", device_neighbors_context(device))
+
+
 class LensDevicePanelDataView(PermissionRequiredMixin, View):
-    """htmx partial for the device page's LENS panel: stats, LENS Detail and
-    neighbors — the Netdisco-backed part, loaded after the page itself."""
+    """htmx partial for the device page's Netdisco card: WLC stats, device
+    data, sync and rebuild — the Netdisco-backed part, loaded after the page."""
     permission_required = "netbox_lens.use_lens"
 
     def get(self, request, pk):
@@ -1596,15 +1698,6 @@ class LensInterfaceNodesDataView(PermissionRequiredMixin, View):
         iface = get_object_or_404(NbInterface.objects.select_related("device__primary_ip4"), pk=pk)
         return render(request, "netbox_lens/interface_nodes_data.html",
                       interface_nodes_context(iface, history=request.GET.get("history") == "1"))
-
-
-class LensDeviceStatsDataView(PermissionRequiredMixin, View):
-    """htmx partial: the device panel's MAC/port/VLAN counts, on click."""
-    permission_required = "netbox_lens.use_lens"
-
-    def get(self, request, pk):
-        device = get_object_or_404(NbDevice.objects.restrict(request.user, "view").select_related("primary_ip4", "role"), pk=pk)
-        return render(request, "netbox_lens/device_stats_data.html", {"lens_node_stats": device_node_stats(device)})
 
 
 class LensInterfacePortDataView(PermissionRequiredMixin, View):

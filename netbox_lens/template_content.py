@@ -1,6 +1,7 @@
 import operator
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 from functools import reduce
 
 from django.conf import settings
@@ -201,6 +202,7 @@ def ap_radio_links(ports):
                 "url": radio_urls.get((ap.pk, f"dot11radio{slot}")),
                 "ap_name": ap.name,
                 "ap_url": ap.get_absolute_url(),
+                "ap_id": ap.pk,
             }
     return links
 
@@ -220,10 +222,77 @@ def apply_ap_radio_links(rows):
             r["nb_interface_url"] = link["url"]
             r["port_description"] = link["ap_name"]
             r["port_device_url"] = link["ap_url"]
+            r["port_device_id"] = link["ap_id"]
     for r in rows:
         if r.get("is_wireless") is None and (r.get("port_device_url") or r.get("ssid")):
             r["is_wireless"] = True
     _apply_ap_nodes(rows)
+
+
+# A switch sighting and a WLC sighting count as the same visit when their
+# first/last-seen spans overlap or are at most this far apart.
+_AP_UPLINK_SLACK = timedelta(hours=1)
+
+
+def _sighting_span(row):
+    def parse(v):
+        if isinstance(v, datetime):
+            return v.replace(tzinfo=None)
+        try:
+            return datetime.fromisoformat(str(v)[:19])
+        except ValueError:
+            return None
+    return parse(row.get("time_first")), parse(row.get("time_last"))
+
+
+def _spans_meet(a, b):
+    (a0, a1), (b0, b1) = _sighting_span(a), _sighting_span(b)
+    if None in (a0, a1, b0, b1):
+        return False
+    return a0 - _AP_UPLINK_SLACK <= b1 and b0 - _AP_UPLINK_SLACK <= a1
+
+
+def merge_ap_uplinks(rows):
+    """A wireless client shows up twice: on the WLC (radio port resolved to
+    its AP by apply_ap_radio_links) and on the switch port the AP hangs off.
+    Fold that switch sighting into the WLC row (via_switch, via_port), so the
+    client reads as one row: WLC, AP, via switch port. The switch port counts
+    as the AP's when its CDP/LLDP neighbor IP is on the AP in NetBox, or its
+    description names the AP; same MAC, overlapping time. In place."""
+    wifi = [r for r in rows if r.get("port_device_id")]
+    wired = [r for r in rows if not r.get("port_device_id") and r.get("is_wireless") is not True]
+    if not wifi or not wired:
+        return
+    ap_by_ip = {}
+    ips = {r["port_remote_ip"] for r in wired if r.get("port_remote_ip")}
+    if ips and NbIPAddress:
+        q = reduce(operator.or_, (Q(address__net_host=ip) for ip in ips))
+        for address, device_id in NbIPAddress.objects.filter(q, interface__isnull=False).values_list(
+                "address", "interface__device_id"):
+            ap_by_ip[str(address.ip)] = device_id
+    merged = set()
+    for w in wifi:
+        short = (w.get("port_description") or "").split(".")[0].lower()
+        name_re = re.compile(rf"(?<![\w-]){re.escape(short)}(?![\w-])") if short else None
+        for c in wired:
+            if id(c) in merged or (c.get("mac") or "").lower() != (w.get("mac") or "").lower():
+                continue
+            by_ip = ap_by_ip.get(c.get("port_remote_ip")) == w["port_device_id"]
+            by_name = bool(name_re and name_re.search((c.get("port_description") or "").lower()))
+            if (by_ip or by_name) and _spans_meet(w, c):
+                # sightings carry device{name}/switch, MAC History rows device_name/device_ip
+                w["via_switch"] = ((c.get("device") or {}).get("name") or c.get("device_name")
+                                   or c.get("switch") or c.get("device_ip"))
+                w["via_switch_url"] = c.get("nb_device_url")
+                w["via_port"] = c.get("port")
+                w["via_port_url"] = c.get("nb_interface_url")
+                # the WLC never reports the client's VLAN (stored as 0), the switch port does
+                if str(w.get("vlan") or "0") == "0" and str(c.get("vlan") or "0") != "0":
+                    w["vlan"] = c["vlan"]
+                    w["vlan_from_switch"] = True
+                merged.add(id(c))
+                break
+    rows[:] = [r for r in rows if id(r) not in merged]
 
 
 def _apply_ap_nodes(rows):
@@ -285,25 +354,16 @@ def _device_ip(device):
 
 
 def device_panel_context(device, user):
-    """Everything in the device panel that needs Netdisco: stats, LENS Detail,
-    neighbors. Served by LensDevicePanelDataView via htmx, so none of it runs
+    """Everything in the device panel that needs Netdisco: WLC stats and LENS
+    Detail. Served by LensDevicePanelDataView via htmx, so none of it runs
     while NetBox renders the device page itself."""
     config = settings.PLUGINS_CONFIG.get("netbox_lens", {})
     ip = _device_ip(device)
     backends = get_backends(config) if ip else []
     stats = None
-    neighbors = []
     summaries = []
     if ip and backends:
-        # Two independent Netdisco round trips — run them side by side. The
-        # MAC/port/VLAN counts need the device's whole node list, so they
-        # load on click (device_node_stats), not with every device page.
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            neighbors_f = executor.submit(_fetch_neighbors, backends, ip)
-            summaries_f = executor.submit(_device_summaries, backends, ip)
-            neighbors = _link_neighbors(neighbors_f.result(), device=device)
-            summaries = summaries_f.result()
-        stats = {"neighbors": len(neighbors)}
+        summaries = _device_summaries(backends, ip)
         if _is_wlc(device):
             # Netdisco reports every AP radio as a port on the WLC (thousands
             # on a big one), so count from NetBox instead, as of discobox's
@@ -311,21 +371,25 @@ def device_panel_context(device, user):
             # the WLC's own interfaces are its real ports (discobox never
             # syncs the radio pseudo-ports).
             cf_name = config.get("wlc_controller_cf") or "controller"
-            stats["aps"] = NbDevice.objects.filter(**{f"custom_field_data__{cf_name}": device.pk}).count()
-            stats["ports"] = NbInterface.objects.filter(device=device).count()
+            stats = {
+                "aps": NbDevice.objects.filter(**{f"custom_field_data__{cf_name}": device.pk}).count(),
+                "ports": NbInterface.objects.filter(device=device).count(),
+            }
     found_labels = {label for label, _ in summaries}
+    holder = None if summaries or not backends else _ip_holder(backends, ip)
     return {
+        "lens_enabled": bool(ip and backends),
         "lens_stats": stats,
         "lens_found": bool(summaries),
+        "lens_ip_holder": holder,
+        "lens_ip_conflict": bool(holder and not holder["nb_url"]),
         "lens_device_ip": ip,
         "lens_summaries": summaries,
         "lens_backends": [b.label for b in backends],
         "lens_web_links": _device_web_links(backends, ip, found_labels) if ip else [],
-        "lens_neighbors": neighbors,
         "lens_can_trigger": user.has_perm("netbox_lens.trigger_lens"),
         "lens_is_superuser": user.is_superuser,
         "lens_device_pk": device.pk,
-        "lens_bossy_last_updated": device.cf.get("bossy_last_updated"),
         "lens_netdisco_last_update": device.cf.get("netdisco_last_update"),
         # set by discobox after each applied /rebuild (never on dry run or a plain sync)
         "lens_inventory_last_rebuild": device.cf.get("inventory_last_rebuild"),
@@ -336,22 +400,56 @@ def _is_wlc(device):
     return bool(device.role and device.role.slug == "lwapp-ctr")
 
 
-def device_node_stats(device):
-    """Active MACs, ports and VLANs on a device, from its whole Netdisco node
-    list — the device panel's counts, loaded on click. Ports of a WLC come
-    from NetBox (shown with the panel), so they aren't counted here."""
+def _netbox_device_for(holder):
+    """The NetBox device a Netdisco device is, by exact name, short name or
+    serial (discobox's rule). A cluster VIP is held by a member that is in
+    NetBox; a stale holder that is gone from NetBox is a conflict."""
+    if not NbDevice:
+        return None
+    name = holder.get("name") or ""
+    short = name.split(".")[0]
+    q = Q(name__iexact=name) | Q(name__iexact=short) | Q(name__istartswith=f"{short}.")
+    if holder.get("serial"):
+        q |= Q(serial__iexact=holder["serial"])
+    return NbDevice.objects.filter(q).first() if name else None
+
+
+def _ip_holder(backends, ip):
+    """Another Netdisco device holding ip as an alias, with "nb_device" set
+    when that device is in NetBox (a cluster member: discobox syncs through
+    it on purpose, nothing to block)."""
+    for b in backends:
+        holder = b.ip_holder(ip)
+        if holder:
+            nb = _netbox_device_for(holder)
+            return {**holder, "backend": b.label,
+                    "nb_name": nb.name if nb else None,
+                    "nb_url": nb.get_absolute_url() if nb else None}
+    return None
+
+
+def device_ip_conflict(device):
+    """The Netdisco device that holds this device's primary IP as an alias,
+    when Netdisco has no device at that IP. Sync, rebuild and discover would
+    all land on that holder, so the device page blocks them. None otherwise."""
     ip = _device_ip(device)
     backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
-    if not backends:
+    if not backends or _device_summaries(backends, ip):
         return None
-    nodes = [n for n in _device_nodes(backends, ip) if n.get("active")]
-    stats = {
-        "macs": len(nodes),
-        "vlans": len({n["vlan"] for n in nodes if n.get("vlan") and n["vlan"] != "0"}),
+    holder = _ip_holder(backends, ip)
+    return holder if holder and not holder["nb_url"] else None
+
+
+def device_neighbors_context(device):
+    """The device's LLDP/CDP neighbors from Netdisco, linked to NetBox, for
+    the Neighbors tab. One /ports call, only when the tab is opened."""
+    ip = _device_ip(device)
+    backends = get_backends(settings.PLUGINS_CONFIG.get("netbox_lens", {})) if ip else []
+    return {
+        "lens_device_ip": ip,
+        "lens_enabled": bool(backends),
+        "lens_neighbors": _link_neighbors(_fetch_neighbors(backends, ip), device=device) if backends else [],
     }
-    if not _is_wlc(device):
-        stats["ports"] = len({n["port"] for n in nodes if n.get("port")})
-    return stats
 
 
 def device_panel_enabled(device, config):
@@ -420,11 +518,53 @@ def interface_nodes_context(iface, history=False):
             client = clients.get(n.get("mac")) or {}
             n["client_ip"] = client.get("ip")
             n["client_name"] = client.get("dns")
+    nac = _nac(backends[0].port_pae(ip, iface.name)) if backends else None
+    for n in nodes:
+        n["nac_session"] = _is_nac_session(nac, n.get("mac"))
     return {
+        "lens_nac": nac,
         "lens_nodes": nodes, "lens_device_ip": ip, "lens_port": iface.name,
         "lens_device_name": getattr(iface.device, "name", None),
         "lens_history": history, "lens_truncated": truncated, "lens_max": MAX_HISTORY_NODES,
     }
+
+
+# NAC (802.1X/MAB) needs one Netdisco call per switch port, so only for the
+# few active wired ports of a lookup.
+MAX_NAC_PORTS = 5
+
+
+def _nac(pae):
+    """port_pae() result, or None when the port has no 802.1X/MAB at all."""
+    return pae if pae and (pae.get("authconfig_state") or pae.get("port_control")) else None
+
+
+def _is_nac_session(nac, mac):
+    """Whether this MAC holds the port's NAC session: it sent the last EAPOL
+    frame, or MAB let it in (the MAB user is the MAC itself)."""
+    m = _normalize_mac(mac)
+    if not m or not nac:
+        return False
+    return m == _normalize_mac(nac.get("last_eapol_source")) or bool(
+        nac.get("mab") and m == _normalize_mac(nac.get("user")))
+
+
+def apply_port_nac(rows, backend):
+    """Attach the switch port's NAC state (nac, nac_session) to the active
+    wired, non-transit sightings of a lookup. In place."""
+    def wired(r):
+        return (r.get("active") and r.get("is_wireless") is not True and not r.get("port_device_url")
+                and not r.get("transit_via") and r.get("switch") and r.get("port"))
+    targets = list(dict.fromkeys((r["switch"], r["port"]) for r in rows if wired(r)))[:MAX_NAC_PORTS]
+    if not targets:
+        return
+    with ThreadPoolExecutor(max_workers=MAX_NAC_PORTS) as executor:
+        nacs = dict(zip(targets, executor.map(lambda t: _nac(backend.port_pae(*t)), targets)))
+    for r in rows:
+        nac = nacs.get((r.get("switch"), r.get("port"))) if wired(r) else None
+        if nac:
+            r["nac"] = nac
+            r["nac_session"] = _is_nac_session(nac, r.get("mac"))
 
 
 # Port history: everything Netdisco keeps (its node expiry decides how far back).
@@ -446,12 +586,6 @@ def _resolve_mac(backends, mac):
 
 class InterfaceLensPanel(PluginTemplateExtension):
     models = ["dcim.interface"]
-
-    def full_width_page(self):
-        iface = self.context["object"]
-        if not self._enabled(iface):
-            return ""
-        return self.render("netbox_lens/interface_nodes_panel.html", extra_context=self._ctx(iface))
 
     def right_page(self):
         iface = self.context["object"]

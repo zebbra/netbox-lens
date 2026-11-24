@@ -3,9 +3,9 @@ from netbox.plugins import PluginConfig
 
 class LensConfig(PluginConfig):
     name = "netbox_lens"
-    verbose_name = "LENS"
+    verbose_name = "Netdisco"
     description = "Locate Endpoints across Network Systems"
-    version = "1.0.54"
+    version = "1.0.55"
     author = "Stefan Grosser"
     author_email = "stefan.grosser@zebbra.ch"
     base_url = "lens"

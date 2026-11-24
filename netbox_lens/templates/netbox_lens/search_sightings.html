@@ -31,11 +31,12 @@
     var edge = sightings.filter(function(s){ return !s.transit_via; });
     if (edge.length) sightings = edge;
     var el = document.getElementById('lens-tl-{{ backend.name }}');
-    if (!el || !sightings.length) return;
-
-    // only meaningful for single-MAC searches
+    if (!el) return;
+    // one port/device/vlan block per MAC (a client name can have a wired and
+    // a WLAN MAC); past a handful it gets unreadable, so the card goes
+    var MAX_MACS = 5;
     var macs = [...new Set(sightings.map(function(s){ return s.mac; }))];
-    if (macs.length !== 1) { el.style.display = 'none'; return; }
+    if (!sightings.length || macs.length > MAX_MACS) { el.closest('.card').style.display = 'none'; return; }
 
     var PALETTE = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f',
                    '#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
@@ -44,6 +45,8 @@
     function portKey(s)   { return s.switch + ':' + s.port; }
     function devKey(s)    { return s.switch; }
     function portShort(s) {
+      // WLC radio port resolved to its AP: the AP name, not the radio MAC
+      if (s.port_device_url && s.port_description) return s.port_description.split('.')[0];
       return s.port.replace(/^GigabitEthernet/, 'Gi')
                    .replace(/^TenGigabitEthernet/, 'Te')
                    .replace(/^FastEthernet/, 'Fa');
@@ -89,7 +92,10 @@
 
     var W    = Math.max(el.clientWidth || 600, 400);
     var barW = W - LABEL_W - 8;
-    var H    = 3 * ROW_H + 2 * GAP + AXIS_H;
+    var MAC_H = macs.length > 1 ? 18 : 0;   // a MAC title above each block
+    var BLOCK_H = MAC_H + 3 * ROW_H + 2 * GAP;
+    var BLOCK_GAP = 10;
+    var H    = macs.length * BLOCK_H + (macs.length - 1) * BLOCK_GAP + AXIS_H;
 
     function px(t)      { return LABEL_W + (t - tMin) / span * barW; }
     function fmtDate(t) { var d = new Date(t); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -171,12 +177,18 @@
       });
     }
 
-    drawRow(0,                 'port',   sorted, portKey,  portColors,  portLabels);
-    drawRow(ROW_H + GAP,       'device', sorted, devKey,   devColors,   devLabels);
-    drawRow(2 * (ROW_H + GAP), 'vlan',   sorted, vlanKey,  vlanColors,  vlanLabels);
+    macs.forEach(function(mac, i) {
+      var y = i * (BLOCK_H + BLOCK_GAP);
+      var mine = sorted.filter(function(s){ return s.mac === mac; });
+      if (MAC_H) txt(mac, LABEL_W, y + 12, {fill:textColor, 'font-weight':'bold'}, svg);
+      y += MAC_H;
+      drawRow(y,                     'port',   mine, portKey, portColors, portLabels);
+      drawRow(y + ROW_H + GAP,       'device', mine, devKey,  devColors,  devLabels);
+      drawRow(y + 2 * (ROW_H + GAP), 'vlan',   mine, vlanKey, vlanColors, vlanLabels);
+    });
 
     // shared axis
-    var axisY = 3 * ROW_H + 2 * GAP;
+    var axisY = H - AXIS_H;
     ticks.forEach(function(t) {
       txt(fmtDate(t), Math.round(px(t)), axisY + AXIS_H - 10,
         {'text-anchor':'middle', fill:textColor}, svg);
@@ -208,21 +220,21 @@
     </div>
     {% include 'netbox_lens/transit_toggle.html' with toggle_id=backend.name toggle_class="mx-3 mt-2" %}
     <div class="table-responsive">
-      <table class="table table-hover table-headings mb-0">
+      <table class="table table-hover table-headings mb-0 lens-sortable">
         <thead>
           <tr>
-            <th>{% trans "MAC" %}</th>
-            <th>{% trans "Device" %}</th>
-            <th>{% trans "Port" %}</th>
-            <th>{% trans "Connection" %}</th>
-            <th>{% trans "VLAN" %}</th>
-            <th>{% trans "First Seen" %}</th>
-            <th>{% trans "Last Seen" %}</th>
+            <th data-sort-type="text">{% trans "MAC" %}</th>
+            <th data-sort-type="text">{% trans "Device" %}</th>
+            <th data-sort-type="text">{% trans "Port" %}</th>
+            <th data-sort-type="text">{% trans "Connection" %}</th>
+            <th data-sort-type="num">{% trans "VLAN" %}</th>
+            <th data-sort-type="text">{% trans "First Seen" %}</th>
+            <th data-sort-type="text" data-sort-default="desc">{% trans "Last Seen" %}</th>
             <th style="min-width:110px">
               <i class="mdi mdi-chart-timeline-variant text-muted" aria-hidden="true"
                  title="{% trans 'First to last seen, on a shared axis from the oldest entry in this list (left) to now (right).' %}"></i>
             </th>
-            <th>
+            <th data-sort-type="text">
               {% trans "Active" %}
               <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
                  title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
@@ -245,12 +257,15 @@
                 {% endif %}
               </span>
             </td>
-            <td>
+            <td data-sort="{% if row.port_device_url %}{{ row.port_description }}{% else %}{{ row.port|default:'' }}{% endif %}">
               {% if row.port_device_url %}
-              {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot goes underneath #}
-              <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'Access point' %}"></i>
-              <a href="{{ row.port_device_url }}">{{ row.port_description }}</a>
-              <br /><span class="text-muted small">{% if row.nb_interface_url %}<a href="{{ row.nb_interface_url }}" class="text-muted">{{ row.port }}</a>{% else %}<code class="lens-copy" data-value="{{ row.port }}">{{ row.port }}</code>{% endif %}</span>
+              {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot only as tooltip #}
+              <a href="{{ row.port_device_url }}" title="{% trans 'Radio' %} {{ row.port }}">{{ row.port_description }}</a>
+              {% if row.via_switch %}
+              <br /><span class="text-muted small" title="{% trans 'The switch port this AP hangs off; the client was seen there too.' %}">{% trans "via" %}
+                {% if row.via_switch_url %}<a href="{{ row.via_switch_url }}" class="text-muted">{{ row.via_switch }}</a>{% else %}{{ row.via_switch }}{% endif %} ·
+                {% if row.via_port_url %}<a href="{{ row.via_port_url }}" class="text-muted">{{ row.via_port }}</a>{% else %}{{ row.via_port }}{% endif %}</span>
+              {% endif %}
               {% else %}
               {% if row.nb_interface_url %}
               <a href="{{ row.nb_interface_url }}">{{ row.port }}</a>
@@ -279,16 +294,17 @@
                 {% trans "WLAN" %}{% if row.ssid %} · <code class="lens-copy" data-value="{{ row.ssid }}">{{ row.ssid }}</code>{% endif %}
               {% else %}<i class="mdi mdi-ethernet" aria-hidden="true" title="{% trans 'Wired' %}"></i> {% trans "Wired" %}
               {% endif %}
+              {% include 'netbox_lens/nac_line.html' %}
             </td>
-            <td>{{ row.vlan|default:"—" }}</td>
-            <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
-            <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
+            {% include 'netbox_lens/vlan_cell.html' %}
+            <td class="text-nowrap" data-sort="{{ row.time_first|default:'' }}"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
+            <td class="text-nowrap" data-sort="{{ row.time_last|default:'' }}"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
             <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}{% with dur=row|lens_duration %}{% if dur %} · {{ dur }}{% endif %}{% endwith %}">
               <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
                 <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
               </div>
             </td>
-            <td>
+            <td data-sort="{% if row.active %}1{% elif row.active is False %}0{% endif %}">
               {% if row.active is None %}—
               {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
               {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
@@ -300,6 +316,7 @@
       </table>
     </div>
   </div>
+  {% include 'netbox_lens/sortable_table.html' %}
 {% elif backend.history_macs %}
 <div class="card mb-3">
   <div class="card-header">

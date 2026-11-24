@@ -15,36 +15,37 @@
 <div data-lens-transit-scope>
 {% include 'netbox_lens/transit_toggle.html' with toggle_id="mac" toggle_class="" %}
 <div class="table-responsive">
-  <table class="table table-hover table-headings mb-0">
+  {# not sortable when grouped by port: the port cell spans its rows #}
+  <table class="table table-hover table-headings mb-0{% if not group_by_port %} lens-sortable{% endif %}">
     <thead>
       <tr>
         {% if not hide_device_area %}
-        <th>{% trans "Device" %}</th>
+        <th data-sort-type="text">{% trans "Device" %}</th>
         {% endif %}
-        <th>{% trans "Port" %}</th>
+        <th data-sort-type="text">{% trans "Port" %}</th>
         {% if not device_tab %}
-        <th>
+        <th data-sort-type="text">
           {% trans "Connection" %}
           <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
              title="{% trans 'WLAN clients often randomize their MAC address per session/reconnect — the same physical device may show up under different MACs over time.' %}"></i>
         </th>
         {% endif %}
-        <th>{% trans "MAC" %}</th>
-        <th>{% trans "VLAN" %}</th>
-        <th>{% trans "Client IP" %}</th>
-        <th>{% trans "Client Name" %}</th>
+        <th data-sort-type="text">{% trans "MAC" %}</th>
+        <th data-sort-type="num">{% trans "VLAN" %}</th>
+        <th data-sort-type="text">{% trans "Client IP" %}</th>
+        <th data-sort-type="text">{% trans "Client Name" %}</th>
         {% if not device_tab %}
-        <th>
+        <th data-sort-type="text">
           {% trans "Active" %}
           <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
              title="{% trans 'Whether this is the current sighting in Netdisco (not archived or superseded).' %}"></i>
         </th>
         {% endif %}
         {% if not hide_device_area %}
-        <th>{% trans "Area" %}</th>
+        <th data-sort-type="text">{% trans "Area" %}</th>
         {% endif %}
-        <th>{% trans "First Seen" %}</th>
-        <th>{% trans "Last Seen" %}</th>
+        <th data-sort-type="text">{% trans "First Seen" %}</th>
+        <th data-sort-type="text" data-sort-default="desc">{% trans "Last Seen" %}</th>
         <th style="min-width:110px">
           <i class="mdi mdi-chart-timeline-variant text-muted" aria-hidden="true"
              title="{% trans 'First to last seen, on a shared axis from the oldest entry in this list (left) to now (right).' %}"></i>
@@ -67,12 +68,15 @@
         {% endif %}
         {# group_by_port (device tab): rows come sorted by port, the port cell spans its group #}
         {% if not group_by_port or row.port_rowspan %}
-        <td{% if group_by_port %} rowspan="{{ row.port_rowspan }}" class="align-top"{% endif %}>
+        <td{% if group_by_port %} rowspan="{{ row.port_rowspan }}" class="align-top"{% else %} data-sort="{% if row.port_device_url %}{{ row.port_description }}{% else %}{{ row.port|default:'' }}{% endif %}"{% endif %}>
           {% if row.port_device_url %}
-          {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot goes underneath #}
-          <i class="mdi mdi-access-point" aria-hidden="true" title="{% trans 'Access point' %}"></i>
-          <a href="{{ row.port_device_url }}">{{ row.port_description }}</a>
-          <br /><span class="text-muted small">{% if row.nb_interface_url %}<a href="{{ row.nb_interface_url }}" class="text-muted">{{ row.port }}</a>{% else %}{{ row.port }}{% endif %}</span>
+          {# WLC radio "port" resolved to its AP: the AP is what matters, the radio MAC.slot only as tooltip #}
+          <a href="{{ row.port_device_url }}" title="{% trans 'Radio' %} {{ row.port }}">{{ row.port_description }}</a>
+          {% if row.via_switch %}
+          <br /><span class="text-muted small" title="{% trans 'The switch port this AP hangs off; the client was seen there too.' %}">{% trans "via" %}
+            {% if row.via_switch_url %}<a href="{{ row.via_switch_url }}" class="text-muted">{{ row.via_switch }}</a>{% else %}{{ row.via_switch }}{% endif %} ·
+            {% if row.via_port_url %}<a href="{{ row.via_port_url }}" class="text-muted">{{ row.via_port }}</a>{% else %}{{ row.via_port }}{% endif %}</span>
+          {% endif %}
           {% else %}
           {% if row.nb_interface_url %}
           <a href="{{ row.nb_interface_url }}">{{ row.port|default:"—" }}</a>
@@ -108,9 +112,9 @@
           {% endif %}
         </td>
         {% endif %}
-        <td class="text-nowrap"><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac|default:"—" }}</code>{% if row.client_others|length >= 20 %} <span class="badge text-bg-warning" title="One MAC answers for many IPs: a load balancer, firewall or proxy ARP, not a single client">shared MAC</span>{% endif %}</td>
-        <td>{{ row.vlan|default:"—" }}</td>
-        <td>
+        <td><code class="lens-copy" data-value="{{ row.mac }}">{{ row.mac|default:"—" }}</code>{% if row.client_others|length >= 20 %}<br><span class="badge text-bg-warning" title="One MAC answers for many IPs: a load balancer, firewall or proxy ARP, not a single client">shared MAC</span>{% endif %}</td>
+        {% include 'netbox_lens/vlan_cell.html' %}
+        <td data-sort="{{ row.client_ip|default:'' }}">
           {% if row.client_ip %}<code class="lens-copy" data-value="{{ row.client_ip }}">{{ row.client_ip }}</code>
           {% else %}—{% endif %}
           {% if row.client_others %}<div class="small text-muted" title="{% for o in row.client_others|slice:":10" %}{{ o.ip }}{% if o.dns %} {{ o.dns }}{% endif %}{% if not forloop.last %}&#10;{% endif %}{% endfor %}{% if row.client_others|length > 10 %}&#10;…{% endif %}">+{{ row.client_others|length }} {% if row.client_others|length == 1 %}other IP{% else %}other IPs{% endif %}</div>{% endif %}
@@ -120,7 +124,7 @@
           {% else %}—{% endif %}
         </td>
         {% if not device_tab %}
-        <td>
+        <td data-sort="{% if row.active %}1{% elif row.active is False %}0{% endif %}">
           {% if row.active is None %}—
           {% elif row.active %}<i class="mdi mdi-circle text-success" aria-hidden="true" title="{% trans 'Active: the current sighting in Netdisco' %}"></i>
           {% else %}<i class="mdi mdi-circle-outline text-muted" aria-hidden="true" title="{% trans 'Not active: archived or superseded in Netdisco' %}"></i>{% endif %}
@@ -129,8 +133,8 @@
         {% if not hide_device_area %}
         <td>{{ row.area|default:"—" }}</td>
         {% endif %}
-        <td class="text-nowrap"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
-        <td class="text-nowrap"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
+        <td class="text-nowrap" data-sort="{{ row.time_first|default:'' }}"><span title="{{ row.time_first|lens_ago }}">{{ row.time_first|lens_datetime|default:"—" }}</span></td>
+        <td class="text-nowrap" data-sort="{{ row.time_last|default:'' }}"><span title="{{ row.time_last|lens_ago }}">{{ row.time_last|lens_datetime|default:"—" }}</span></td>
         <td class="align-middle" title="{{ row.time_first|lens_datetime }} → {{ row.time_last|lens_datetime }}{% with dur=row|lens_duration %}{% if dur %} · {{ dur }}{% endif %}{% endwith %}">
           <div style="position:relative;height:6px;border-radius:3px;background:var(--tblr-border-color, rgba(128,128,128,.25))">
             <div style="position:absolute;top:0;bottom:0;min-width:3px;border-radius:3px;background:var(--tblr-primary, #206bc4);{{ row|lens_age_bar:age_axis }}{% if row.active is False %};opacity:.45{% endif %}"></div>
@@ -151,12 +155,13 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="{% if device_tab %}9{% elif hide_device_area %}11{% else %}13{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
+      <tr class="lens-nosort"><td colspan="{% if device_tab %}9{% elif hide_device_area %}11{% else %}13{% endif %}" class="text-muted">{% trans "No matching nodes found." %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 </div>
+{% if not group_by_port %}{% include 'netbox_lens/sortable_table.html' %}{% endif %}
 
 <style>code.lens-copy { cursor: pointer; border-radius: 3px; }</style>
 <script>

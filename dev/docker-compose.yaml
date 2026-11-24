@@ -80,7 +80,7 @@ services:
   # ── Discobox ──────────────────────────────────────────────────────────────
 
   discobox:
-    image: quay.io/stefan_grosser/discobox:latest
+    build: ../../bit-discobox
     container_name: lens-discobox
     depends_on:
       netdisco-web:
@@ -92,9 +92,14 @@ services:
     env_file: discobox.env
     volumes:
       - ./discobox.yaml:/etc/discobox/discobox.yaml:ro
-      - ../../bit-discobox/discobox.py:/app/discobox.py:ro
+      # live code from the checkout (the same files the Dockerfile copies)
+      - ../../bit-discobox/discobox:/app/discobox:ro
       - ../../bit-discobox/server.py:/app/server.py:ro
       - ../../bit-discobox/typesync.py:/app/typesync.py:ro
+      - ../../bit-discobox/jobs.py:/app/jobs.py:ro
+      - ../../bit-discobox/config.py:/app/config.py:ro
+      - ../../bit-discobox/metrics.py:/app/metrics.py:ro
+      - ../../bit-discobox/templates:/app/templates:ro
       # full local checkout (the image bakes only a pinned Cisco/Fortinet copy)
       - ../../devicetype-library:/opt/devicetype-library:ro
 
@@ -113,6 +118,7 @@ services:
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/plugins.py:ro
+      - ../../netbox-snmp-modulator:/opt/netbox/netbox-snmp-modulator:ro
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/login/"]
       interval: 10s
@@ -122,6 +128,7 @@ services:
     command: >-
       sh -c "PTH=$$(ls -d /opt/netbox/venv/lib/python3.*/site-packages) &&
              echo /opt/netbox/netbox-lens > \"$$PTH/netbox-lens-dev.pth\" &&
+             echo /opt/netbox/netbox-snmp-modulator > \"$$PTH/netbox-snmp-modulator-dev.pth\" &&
              exec /opt/netbox/docker-entrypoint.sh /opt/netbox/launch-netbox.sh"
 
   netbox-worker:
@@ -134,9 +141,11 @@ services:
     volumes:
       - ../:/opt/netbox/netbox-lens:ro
       - ./configuration.py:/etc/netbox/config/plugins.py:ro
+      - ../../netbox-snmp-modulator:/opt/netbox/netbox-snmp-modulator:ro
     command: >-
       sh -c "PTH=$$(ls -d /opt/netbox/venv/lib/python3.*/site-packages) &&
              echo /opt/netbox/netbox-lens > \"$$PTH/netbox-lens-dev.pth\" &&
+             echo /opt/netbox/netbox-snmp-modulator > \"$$PTH/netbox-snmp-modulator-dev.pth\" &&
              exec /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py rqworker"
 
   postgres:

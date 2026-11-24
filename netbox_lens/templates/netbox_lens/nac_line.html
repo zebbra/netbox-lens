@@ -1,0 +1,10 @@
+{% load i18n %}{# NAC (802.1X/MAB) of a sighting's switch port, from apply_port_nac. #}
+{% if row.nac %}
+<br /><span class="small text-muted" title="{% trans 'NAC on this switch port (Netdisco)' %}&#10;{% trans 'State' %}: {{ row.nac.authconfig_state|default:'—' }}&#10;{% trans 'Port Control' %}: {{ row.nac.port_control|default:'—' }}&#10;{% trans 'Port Status' %}: {{ row.nac.port_status|default:'—' }}{% if row.nac.last_eapol_source %}&#10;{% trans 'Last EAPOL' %}: {{ row.nac.last_eapol_source }}{% endif %}">
+  <i class="mdi mdi-shield-account" aria-hidden="true"></i>
+  {% if row.nac.mab %}MAB{% else %}802.1X{% endif %}
+  {{ row.nac.port_status|default:row.nac.authconfig_state|default:"" }}
+  {% if row.nac.user and not row.nac.mab %}· <code class="lens-copy" data-value="{{ row.nac.user }}">{{ row.nac.user }}</code>{% endif %}
+  {% if row.nac_session %}<i class="mdi mdi-check-circle text-success" title="{% trans 'This MAC holds the NAC session on the port' %}" aria-hidden="true"></i>{% endif %}
+</span>
+{% endif %}

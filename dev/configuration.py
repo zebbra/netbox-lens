@@ -1,6 +1,6 @@
 import os
 
-PLUGINS = ["netbox_lens"]
+PLUGINS = ["netbox_lens", "netbox_snmp_modulator"]
 
 PLUGINS_CONFIG = {
     "netbox_lens": {
@@ -13,5 +13,8 @@ PLUGINS_CONFIG = {
         "discobox": {
             "url": os.environ.get("DISCOBOX_URL", "http://discobox:8080"),
         },
-    }
+    },
+    "netbox_snmp_modulator": {
+        "url": os.environ.get("SNMP_MODULATOR_URL", "http://localhost:9999"),
+    },
 }

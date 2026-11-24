@@ -2,8 +2,8 @@ from django.utils.translation import gettext_lazy as _
 from netbox.plugins import PluginMenu, PluginMenuItem
 
 menu = PluginMenu(
-    label=_("LENS"),
-    icon_class="mdi mdi-magnify-scan",
+    label=_("Netdisco"),
+    icon_class="mdi mdi-network",
     groups=(
         (
             _("Lookup"),
@@ -13,19 +13,14 @@ menu = PluginMenu(
                     link_text=_("Endpoint"),
                     permissions=["netbox_lens.use_lens"],
                 ),
-                PluginMenuItem(
-                    link="dcim:interface_list",
-                    link_text="Interfaces",
-                    permissions=["netbox_lens.use_lens"],
-                ),
             ),
         ),
         (
-            _("Legacy"),
+            _("Reports"),
             (
                 PluginMenuItem(
                     link="plugins:netbox_lens:interface_search",
-                    link_text="Default",
+                    link_text=_("Port status"),
                     permissions=["netbox_lens.use_lens"],
                 ),
                 PluginMenuItem(

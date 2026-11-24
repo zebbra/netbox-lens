@@ -16,6 +16,8 @@ class SearchResult:
     notice: str | None = None
     # MACs whose archived history "Load history" can fetch (capped)
     history_macs: list = field(default_factory=list)
+    # archived IPs of the MACs in ips (no longer active), for few-MAC searches
+    earlier_ips: list = field(default_factory=list)
 
     @property
     def has_results(self):
@@ -107,6 +109,9 @@ class LensBackend(ABC):
         return None
 
     def device_web_url(self, device_ip: str) -> str | None:
+        return None
+
+    def ip_holder(self, device_ip: str) -> dict | None:
         return None
 
     def sighting_history(self, macs) -> tuple[list, str | None]:

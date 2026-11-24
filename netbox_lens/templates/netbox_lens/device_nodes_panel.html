@@ -4,30 +4,22 @@
 {% if lens_device_name %}
 <div class="card mb-3">
   <div class="card-header d-flex align-items-center gap-2">
-    <i class="mdi mdi-magnify-scan" aria-hidden="true"></i>
-    <strong>LENS</strong>
+    <i class="mdi mdi-network" aria-hidden="true"></i>
+    <strong>{% trans "Netdisco" %}</strong>
+    <i class="mdi mdi-information-outline text-muted" aria-hidden="true"
+       title="{% trans 'Netdisco: device data. Discobox: syncs inventory to NetBox.' %}"></i>
   </div>
   <div class="card-body">
-    {% if lens_device_ip %}
-    <div id="lens-stats" class="mb-3">
-      <div class="text-muted small d-flex align-items-center gap-2">
-        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        {% trans "Loading from Netdisco…" %}
-      </div>
-    </div>
-    {% else %}
+    {% if not lens_device_ip %}
     <div class="d-flex align-items-center gap-2 mb-3">
       <span class="text-muted small">
         <i class="mdi mdi-alert-outline text-warning" aria-hidden="true"></i>
-        {% trans "No primary IPv4, so no Netdisco data (stats, sync, discover)." %}
+        {% trans "No primary IPv4, so no Netdisco data (sync, discover)." %}
       </span>
       {% if lens_can_trigger %}{% include "netbox_lens/refresh_ip_button.html" %}{% endif %}
     </div>
     {% endif %}
     <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:interface_search' %}?device={{ lens_device_name|urlencode }}">
-        <i class="mdi mdi-ethernet" aria-hidden="true"></i> {% trans "Default" %}
-      </a>
       <a class="btn btn-outline-secondary btn-sm" href="{% url 'plugins:netbox_lens:down_ports' %}?device={{ lens_device_name|urlencode }}">
         <i class="mdi mdi-lan-disconnect" aria-hidden="true"></i> {% trans "Down Ports" %}
       </a>
@@ -38,15 +30,21 @@
         <i class="mdi mdi-shield-search" aria-hidden="true"></i> {% trans "NAC Status" %}
       </a>
     </div>
+    {% if lens_device_ip %}
+    <hr class="my-3">
+    {# Everything that needs Netdisco loads after the page has rendered, so a slow or unreachable backend can't hold up the device page. #}
+    <div hx-get="{% url 'plugins:netbox_lens:device_panel_data' pk=lens_device_pk %}" hx-trigger="load" hx-swap="outerHTML">
+      <div class="text-muted small d-flex align-items-center gap-2">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        {% trans "Loading from Netdisco…" %}
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}
 
 {% if lens_device_name %}
-{# Everything that needs Netdisco loads after the page has rendered, so a slow or unreachable backend can't hold up the device page. #}
-{% if lens_device_ip %}
-<div hx-get="{% url 'plugins:netbox_lens:device_panel_data' pk=lens_device_pk %}" hx-trigger="load" hx-swap="outerHTML"></div>
-{% endif %}
 {% if lens_can_trigger %}
 <div class="modal fade" id="lens-refresh-ip-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">

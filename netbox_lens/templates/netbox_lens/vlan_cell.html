@@ -1,0 +1,4 @@
+{% load i18n %}{# VLAN cell for the MAC tables. Netdisco stores 0 when the device reports no VLAN for the MAC (every WLC client: SNMP::Info doesn't read the station VLAN). #}
+{% with v=row.vlan|default_if_none:""|stringformat:"s" %}
+<td data-sort="{% if v != "0" %}{{ v }}{% endif %}">{% if v and v != "0" %}{% if row.vlan_from_switch %}<span title="{% trans 'From the switch port the AP hangs off (the WLC reports no VLAN)' %}">{{ v }}</span>{% else %}{{ v }}{% endif %}{% else %}<span class="text-muted" title="{% trans 'VLAN unknown: Netdisco gets none for this MAC (always so for WLC clients)' %}">—</span>{% endif %}</td>
+{% endwith %}

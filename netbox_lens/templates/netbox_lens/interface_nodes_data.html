@@ -18,7 +18,7 @@
     <tbody>
       {% for node in lens_nodes %}
       <tr>
-        <td><code class="lens-copy" data-value="{{ node.mac }}">{{ node.mac }}</code></td>
+        <td><code class="lens-copy" data-value="{{ node.mac }}">{{ node.mac }}</code>{% if node.nac_session %} <span class="badge text-bg-success" title="{% if lens_nac.mab %}{% trans 'Let in by MAB' %}{% else %}{% trans 'Sent the last 802.1X (EAPOL) frame on this port' %}{% endif %}">NAC</span>{% endif %}</td>
         <td>{{ node.vlan|default:"—" }}</td>
         <td>{% if node.client_ip %}<code class="lens-copy" data-value="{{ node.client_ip }}">{{ node.client_ip }}</code>{% else %}—{% endif %}</td>
         <td>{% if node.client_name %}<code class="lens-copy" data-value="{{ node.client_name }}">{{ node.client_name }}</code>{% else %}—{% endif %}</td>

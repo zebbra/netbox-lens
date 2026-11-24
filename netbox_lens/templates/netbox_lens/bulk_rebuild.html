@@ -1,7 +1,7 @@
 {% extends "netbox_lens/bulk_run_page.html" %}
 {% load i18n %}
 {% load lens_filters %}
-{% block title %}LENS – {% trans "Rebuild Inventory" %}{% endblock %}
+{% block title %}Netdisco – {% trans "Rebuild Inventory" %}{% endblock %}
 {% block intro %}
 {% blocktrans trimmed with size=batch_size|default:20 %}
 Rebuilds the inventory of the devices below in batches of {{ size }}: the sync, plus deleting what Netdisco no longer has.
